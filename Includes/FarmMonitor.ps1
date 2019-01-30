@@ -1,12 +1,12 @@
 . .\Include.ps1
 
-$config = Get-Config
-$FarmRigs = $config.FarmRigs | ConvertFrom-Json
-$smtp = $config.Smtp#Port# |ConvertFrom-Json
+$global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
+$FarmRigs = $Config.FarmRigs | ConvertFrom-Json
+$SMTP = $Config.SmtpServer | ConvertFrom-Json
 
 #Look for SMTP Password, propmpt and store if not available
 
-if ($config.NotificationMail -ne $null -and $config.NotificationMail -ne "") {
+if ($Config.NotificationMail -ne $null -and $Config.NotificationMail -ne "") {
     #mail notification enabled
 
     if (Test-Path ".\smtp.ctr") {
@@ -58,12 +58,12 @@ while ($true) {
     try {Set-WindowSize 185 60} catch {}
     Clear-Host
 
-    Print-HorizontalLine ("Forager FARM MONITOR (" + (Get-Date).tostring("g") + ")")
+    Out-HorizontalLine ("Forager FARM MONITOR (" + (Get-Date).tostring("g") + ")")
     "" | Out-Host
 
     $FarmRigs | ForEach-Object {
 
-        Print-HorizontalLine ($_.IpOrLanName + " (" + $_.LastContent.config.WorkerName + ")")
+        Out-HorizontalLine ($_.IpOrLanName + " (" + $_.LastContent.config.WorkerName + ")")
 
         if ($_.ChangeStateTime -ne $null) {$ChangeStateElapsed = ((Get-Date) - [datetime]$_.ChangeStateTime).minutes} else {$ChangeStateElapsed = 0} #calculates time since state change
 
@@ -98,7 +98,7 @@ while ($true) {
             #change state 5 minutes ago
             #if ($true) {
 
-            if ($config.NotificationMail -ne $null -and $config.NotificationMail -ne "" -and $_.Notifications -and $_.PendingNotify ) {
+            if ($Config.NotificationMail -ne $null -and $Config.NotificationMail -ne "" -and $_.Notifications -and $_.PendingNotify ) {
                 #mail notification enabled
 
                 $_.PendingNotify = $false
@@ -107,12 +107,12 @@ while ($true) {
 
                 if ($_.State -eq 'OK') {$mailmsg += "ONLINE"} else {$mailmsg += "OFFLINE"}
 
-                $Creds = New-Object PSCredential $smtp.user, $EncPass
+                $Creds = New-Object PSCredential $SMTP.user, $EncPass
 
-                if ($smtp.ssl) {
-                    Send-MailMessage -usessl -To $config.NotificationMail -From $smtp.user -Subject  $mailmsg -smtp ($smtp.url) -Port ($smtp.port) -Credential $Creds
+                if ($SMTP.ssl) {
+                    Send-MailMessage -usessl -To $Config.NotificationMail -From $SMTP.user -Subject  $mailmsg -smtp ($SMTP.url) -Port ($SMTP.port) -Credential $Creds
                 } else {
-                    Send-MailMessage  -To $config.NotificationMail -From $smtp.user  -Subject  $mailmsg -smtp ($smtp.url) -Port ($smtp.port) -Credential $creds
+                    Send-MailMessage  -To $Config.NotificationMail -From $SMTP.user  -Subject  $mailmsg -smtp ($SMTP.url) -Port ($SMTP.port) -Credential $creds
                 }
             }
         }

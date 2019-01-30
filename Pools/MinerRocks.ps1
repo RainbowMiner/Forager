@@ -8,11 +8,11 @@ param(
 $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $true
-$WalletMode = "WALLET"
+$WalletMode = "Wallet"
 $RewardType = "PPLS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
         Disclaimer            = "Must set wallet for each coin on web, set login on config.ini file"
         ActiveOnManualMode    = $ActiveOnManualMode
@@ -51,8 +51,8 @@ if ($Querymode -eq "wallet") {
     if ($Request) {
         $Result = [PSCustomObject]@{
             Pool     = $Name
-            currency = $Info.Symbol
-            balance  = ($Request.stats.balance + $Request.stats.pendingIncome ) / $Divisor
+            Currency = $Info.Symbol
+            Balance  = ($Request.stats.balance + $Request.stats.pendingIncome ) / $Divisor
         }
         Remove-Variable Request
     }
@@ -88,14 +88,14 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
 
             $Coin = Get-CoinUnifiedName $_.Coin
 
-            if ($CoinsWallets.($PoolResponse.config.symbol)) {
+            if ($Wallets.($PoolResponse.config.symbol)) {
                 $Result += [PSCustomObject]@{
                     Info                  = $Coin
                     Algorithm             = $Algo
                     Protocol              = "stratum+tcp"
                     Host                  = $($_.Url -split '//')[1]
                     Port                  = [int]$($PoolResponse.config.ports | Sort-Object {$_.desc -like "*Modern*GPU*"} -Descending | Select-Object -First 1 -ExpandProperty port)
-                    User                  = $CoinsWallets.($PoolResponse.config.symbol)
+                    User                  = $Wallets.($PoolResponse.config.symbol)
                     Pass                  = "w=#WorkerName#"
 
                     Location              = "EU"

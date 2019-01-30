@@ -1,7 +1,8 @@
 <#
-THIS IS A ADVANCED POOL, NOT FOR NOOB.
+THIS IS A ADVANCED POOL.
 
-THIS IS A VIRTUAL POOL, STATISTICS ARE TAKEN FROM WHATTOMINE AND RECALCULATED WITH YOUR BENCHMARKS HashRate, YOU CAN SET DESTINATION POOL YOU WANT FOR EACH COIN, BUT REMEMBER YOU MUST HAVE AND ACOUNT IF DESTINATION POOL IS NOT ANONYMOUS POOL
+THIS IS A VIRTUAL POOL, STATISTICS ARE TAKEN FROM CoinCalculators.io AND RECALCULATED WITH YOUR BENCHMARKS HashRate,
+YOU CAN SET DESTINATION POOL YOU WANT FOR EACH COIN, BUT REMEMBER YOU MUST HAVE AN ACOUNT IF DESTINATION POOL IS NOT ANONYMOUS
 #>
 
 param(
@@ -17,13 +18,13 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $true
 $ActiveOnAutomatic24hMode = $true
-$WalletMode = "MIXED"
+$WalletMode = "Mixed"
 $RewardType = "PPS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
-        Disclaimer               = "Based on CoinCalculator statistics, you must have accounts and wallets for each coin in config.ini"
+        Disclaimer               = "Based on CoinCalculators statistics, you must have accounts and wallets for each coin"
         ActiveOnManualMode       = $ActiveOnManualMode
         ActiveOnAutomaticMode    = $ActiveOnAutomaticMode
         ActiveOnAutomatic24hMode = $ActiveOnAutomatic24hMode
@@ -40,7 +41,7 @@ if (($Querymode -eq "Speed")) {
     }
 }
 
-if (($Querymode -eq "Wallet") -or ($Querymode -eq "APIKey")) {
+if (($Querymode -eq "Wallet") -or ($Querymode -eq "ApiKey")) {
     if ($PoolRealName -ne $null) {
         $Info.PoolName = $PoolRealName
         $Result = Get-Pools -Querymode $info.WalletMode -PoolsFilterList $Info.PoolName -Info $Info | select-object Pool, Currency, Balance
@@ -50,11 +51,14 @@ if (($Querymode -eq "Wallet") -or ($Querymode -eq "APIKey")) {
 if (@("Core", "Menu") -contains $Querymode) {
 
     #Look for pools
-    $ConfigOrder = (Get-ConfigVariable "CoinCalcPoolOrder") -split ','
+    $ConfigOrder = $PoolConfig.$Name.PoolOrder -split ','
     $Pools = foreach ($PoolToSearch in $ConfigOrder) {
         $PoolsTmp = Get-Pools -Querymode "Core" -PoolsFilterList $PoolToSearch -location $Info.Location
         #Filter by minworkes variable (must be here for not selecting now a pool and after that discarded on core.ps1 filter)
-        $PoolsTmp | Where-Object {[string]::IsNullOrEmpty($_.PoolWorkers) -or $_.PoolWorkers -ge (Get-ConfigVariable "MinWorkers")}
+        $PoolsTmp | Where-Object {
+            $_.PoolWorkers -eq $null -or
+            $_.PoolWorkers -ge $(if ($PoolConfig.$PoolToSearch.MinWorkers) {$PoolConfig.$PoolToSearch.MinWorkers} else {$Config.MinWorkers})
+        }
     }
 
     $Url = "https://www.coincalculators.io/api/allcoins.aspx?hashrate=1000&difficultytime=0"
@@ -105,7 +109,7 @@ if (@("Core", "Menu") -contains $Querymode) {
                     WalletMode            = $Pool.WalletMode
                     EthStMode             = $Pool.EthStMode
                     WalletSymbol          = $Pool.WalletSymbol
-                    PoolName              = "CC-" + $Pool.PoolName
+                    PoolName              = $Pool.PoolName
                     PoolWorkers           = $Pool.PoolWorkers
                     PoolHashRate          = $Pool.PoolHashRate
                     RewardType            = $Pool.RewardType

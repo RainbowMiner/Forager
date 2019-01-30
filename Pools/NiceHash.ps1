@@ -11,13 +11,13 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $true
 $ActiveOnAutomatic24hMode = $true
-$WalletMode = "WALLET"
+$WalletMode = "Wallet"
 $RewardType = "PPS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
-        Disclaimer               = "No registration, Autoexchange to BTC always"
+        Disclaimer               = "Autoexchange to BTC, No registration required. Register and set BTC_NICE for lower fees"
         ActiveOnManualMode       = $ActiveOnManualMode
         ActiveOnAutomaticMode    = $ActiveOnAutomaticMode
         ActiveOnAutomatic24hMode = $ActiveOnAutomatic24hMode
@@ -27,7 +27,7 @@ if ($Querymode -eq "info") {
     }
 }
 
-if ($Querymode -eq "speed") {
+if ($Querymode -eq "Speed") {
     $Info.user = $Info.user.split('.')[0]
     $Request = Invoke-APIRequest -Url $("https://api.nicehash.com/api?method=stats.provider.workers&addr=" + $Info.user) -Retry 1
 
@@ -50,7 +50,7 @@ if ($Querymode -eq "speed") {
     }
 }
 
-if ($Querymode -eq "wallet") {
+if ($Querymode -eq "Wallet") {
     $Info.user = ($Info.user -split '\.')[0]
     $Request = Invoke-APIRequest -Url $("https://api.nicehash.com/api?method=stats.provider&addr=" + $Info.user) -Retry 3 |
         Select-Object -ExpandProperty result | Select-Object -ExpandProperty stats
@@ -65,9 +65,9 @@ if ($Querymode -eq "wallet") {
     }
 }
 
-if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
+if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
 
-    if (!$CoinsWallets.BTC_NICE -and !$CoinsWallets.BTC) {
+    if (-not $Wallets.BTC_NICE -and -not $Wallets.BTC) {
         Write-Warning "$Name BTC or BTC_NICE wallets not defined in config.ini"
         Exit
     }
@@ -107,7 +107,7 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
                 HostSSL               = $_.name + "." + $Locations.$location + ".nicehash.com"
                 Port                  = $_.port
                 PortSSL               = $_.port + 30000
-                User                  = $(if ($CoinsWallets.BTC_NICE) {$CoinsWallets.BTC_NICE} else {$CoinsWallets.BTC}) + '.' + "#WorkerName#"
+                User                  = $(if ($Wallets.BTC_NICE) {$Wallets.BTC_NICE} else {$Wallets.BTC}) + '.' + "#WorkerName#"
                 Pass                  = "x"
                 Location              = $Location
                 SSL                   = $enableSSL
@@ -117,7 +117,7 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
                 PoolName              = $Name
                 WalletMode            = $WalletMode
                 WalletSymbol          = "BTC"
-                Fee                   = $(if ($CoinsWallets.BTC_NICE) {0.02} else {0.05})
+                Fee                   = $(if ($Wallets.BTC_NICE) {0.02} else {0.05})
                 EthStMode             = 3
                 RewardType            = $RewardType
             }

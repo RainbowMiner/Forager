@@ -7,54 +7,31 @@ param(
     [string]$CoinsName = $null
 )
 
-. .\Include.ps1
+# . .\Include.ps1
+Import-Module .\Include.psm1
+
+$global:Config = Get-Content .\Config\config.json | ConvertFrom-Json
+$global:Wallets = Get-Content .\Config\wallets.json | ConvertFrom-Json
 
 #check parameters
 
 if (($MiningMode -eq "MANUAL") -and ($PoolsName.count -gt 1)) {Write-Warning "ONLY ONE POOL CAN BE SELECTED ON MANUAL MODE"}
-
-#--------------Load config.ini file
-
-$Currency = Get-ConfigVariable "Currency"
-$Location = Get-ConfigVariable "Location"
-$FarmRigs = Get-ConfigVariable "FarmRigs"
-$LocalCurrency = Get-ConfigVariable "LocalCurrency"
-if (-not $LocalCurrency) {
-    #for old config.ini compatibility
-    $LocalCurrency = switch ($location) {
-        'EU' {"EUR"}
-        'US' {"USD"}
-        'ASIA' {"USD"}
-        'GB' {"GBP"}
-        default {"USD"}
-    }
-}
-
-#needed for anonymous pools load
-$CoinsWallets = @{}
-switch -regex -file config.ini {
-    "^\s*WALLET_(\w+)\s*=\s*(.*)" {
-        $name, $value = $matches[1..2]
-        $CoinsWallets[$name] = $value.Trim()
-    }
-}
-$UserName = Get-ConfigVariable "UserName"
 
 $SelectedOption = ""
 
 #-----------------Ask user for mode to mining AUTO/MANUAL to use, if a pool is indicated in parameters no prompt
 
 Clear-Host
-Print-HorizontalLine ""
-Print-HorizontalLine "SELECT OPTION"
-Print-HorizontalLine ""
+Out-HorizontalLine ""
+Out-HorizontalLine "SELECT OPTION"
+Out-HorizontalLine ""
 
-$Modes = @()
-$Modes += [PSCustomObject]@{"Option" = 0; "Mode" = 'Automatic'; "Explanation" = 'Automatically choose most profitable coin based on pools current statistics'}
-$Modes += [PSCustomObject]@{"Option" = 1; "Mode" = 'Automatic24h'; "Explanation" = 'Automatically choose most profitable coin based on pools 24 hour statistics'}
-$Modes += [PSCustomObject]@{"Option" = 2; "Mode" = 'Manual'; "Explanation" = 'Manual coin selection'}
-
-if ($FarmRigs) {
+$Modes = @(
+    [PSCustomObject]@{"Option" = 0; "Mode" = 'Automatic'; "Explanation" = 'Automatically choose most profitable coin based on pools current statistics'}
+    [PSCustomObject]@{"Option" = 1; "Mode" = 'Automatic24h'; "Explanation" = 'Automatically choose most profitable coin based on pools 24 hour statistics'}
+    [PSCustomObject]@{"Option" = 2; "Mode" = 'Manual'; "Explanation" = 'Manual coin selection'}
+)
+if ($Config.FarmRigs) {
     $Modes += [PSCustomObject]@{"Option" = 3; "Mode" = 'Farm Monitoring'; "Explanation" = 'I want to see my rigs state'}
 }
 $Modes | Format-Table Option, Mode, Explanation
@@ -74,14 +51,15 @@ if ($MiningMode -ne "FARM MONITORING") {
     $counter = 0
     $Pools | ForEach-Object {
         $_.Option = $counter
-        $counter++}
+        $counter++
+    }
 
     #Clear-Host
-    Print-HorizontalLine ""
-    Print-HorizontalLine "SELECT POOL/S TO MINE"
-    Print-HorizontalLine ""
+    Out-HorizontalLine ""
+    Out-HorizontalLine "SELECT POOL/S TO MINE"
+    Out-HorizontalLine ""
 
-    $Pools | Format-Table Option, name, rewardtype, disclaimer
+    $Pools | Format-Table Option, Name, RewardType, Disclaimer
 
     If (-not $PoolsName) {
         if ($MiningMode -eq "Manual") {
@@ -111,7 +89,7 @@ if ($MiningMode -ne "FARM MONITORING") {
         If (-not $CoinsName) {
 
             #Load coins from pools
-            $CoinsPool = Get-Pools -Querymode "Menu" -PoolsFilterList $PoolsName -location $Location | Select-Object Info, Symbol, Algorithm, Workers, PoolHashRate, Blocks_24h, Price -unique | Sort-Object info
+            $CoinsPool = Get-Pools -Querymode "Core" -PoolsFilterList $PoolsName -location $Config.Location | Select-Object Info, Symbol, Algorithm, Workers, PoolHashRate, Blocks_24h, Price -unique | Sort-Object info
 
             $CoinsPool | Add-Member Option "0"
             $CoinsPool | Add-Member YourHashRate ([Double]0.0)
@@ -122,7 +100,7 @@ if ($MiningMode -ne "FARM MONITORING") {
             $CoinsPool | Add-Member LocalPrice ([Double]0.0)
 
             'Calling Coindesk API' | Write-Host
-            $CDKResponse = try { Invoke-RestMethod -Uri "https://api.coindesk.com/v1/bpi/currentprice/$LocalCurrency.json" -UseBasicParsing -TimeoutSec 5 | Select-Object -ExpandProperty BPI } catch { $null; Write-Host "Not responding" }
+            $CDKResponse = try { Invoke-RestMethod -Uri "https://api.coindesk.com/v1/bpi/currentprice/$($Config.LocalCurrency).json" -UseBasicParsing -TimeoutSec 5 | Select-Object -ExpandProperty BPI } catch { $null; Write-Host "Not responding" }
 
             if (($CoinsPool | Where-Object Price -gt 0).count -gt 0) {
                 $Counter = 0
@@ -131,7 +109,7 @@ if ($MiningMode -ne "FARM MONITORING") {
                     $counter++
                     $Coin.YourHashRate = (Get-BestHashRateAlgo $Coin.Algorithm).HashRate
                     $Coin.BtcProfit = $Coin.price * $Coin.YourHashRate
-                    $Coin.LocalProfit = $CDKResponse.$LocalCurrency.rate_float * [double]$Coin.BtcProfit
+                    $Coin.LocalProfit = $CDKResponse.$($Config.LocalCurrency).rate_float * [double]$Coin.BtcProfit
                 }
             } else {
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -206,9 +184,9 @@ if ($MiningMode -ne "FARM MONITORING") {
                     # Remove-Variable PriceCRY
 
                     #Data from WTM
-                    if ($WTMResponse -ne $null) {
+                    if ($WTMResponse) {
                         $WtmCoin = $WTMResponse.PSObject.Properties.Value | Where-Object tag -eq $Coin.Symbol | ForEach-Object {if ($(Get-AlgoUnifiedName $_.algorithm) -eq $Coin.Algorithm) {$_}}
-                        if ($WtmCoin -ne $null) {
+                        if ($WtmCoin) {
 
                             $WTMFactor = switch ($Coin.Algorithm) {
                                 "Allium" { 1e6 }
@@ -261,15 +239,15 @@ if ($MiningMode -ne "FARM MONITORING") {
                             }
                         }
                     }
-                    $Coin.LocalProfit = $CDKResponse.$LocalCurrency.rate_float * $Coin.BtcProfit
-                    $Coin.LocalPrice = $CDKResponse.$LocalCurrency.rate_float * $Coin.BtcPrice
+                    $Coin.LocalProfit = $CDKResponse.$Config.LocalCurrency.rate_float * $Coin.BtcProfit
+                    $Coin.LocalPrice = $CDKResponse.$Config.LocalCurrency.rate_float * $Coin.BtcPrice
                 }
             }
 
             # Clear-Host
-            Print-HorizontalLine ""
-            Print-HorizontalLine "SELECT COIN TO MINE"
-            Print-HorizontalLine ""
+            Out-HorizontalLine ""
+            Out-HorizontalLine "SELECT COIN TO MINE"
+            Out-HorizontalLine ""
             $CoinsPool | Format-Table -Wrap (
                 @{Label = "Opt."; Expression = {$_.Option}; Align = 'right'} ,
                 @{Label = "Name"; Expression = {$_.Info}; Align = 'left'} ,
@@ -277,10 +255,10 @@ if ($MiningMode -ne "FARM MONITORING") {
                 @{Label = "Algorithm"; Expression = {$_.algorithm}; Align = 'left'},
                 @{Label = "HashRate"; Expression = {(ConvertTo-Hash ($_.YourHashRate)) + "/s"}; Align = 'right'},
                 @{Label = "BTCPrice"; Expression = {if ($_.BTCPrice -gt 0) {[math]::Round($_.BTCPrice, 6).ToString("n6")}}; Align = 'right'},
-                @{Label = $LocalCurrency + "Price"; Expression = { [math]::Round($_.LocalPrice, 2)}; Align = 'right'},
+                @{Label = $Config.LocalCurrency + "Price"; Expression = { [math]::Round($_.LocalPrice, 2)}; Align = 'right'},
                 @{Label = "Reward"; Expression = {if ($_.Reward -gt 0 ) {[math]::Round($_.Reward, 3)}}; Align = 'right'},
                 @{Label = "mBTCProfit"; Expression = {if ($_.BtcProfit -gt 0 ) {($_.BtcProfit * 1000).ToString("n5")}}; Align = 'right'},
-                @{Label = $LocalCurrency + "Profit"; Expression = {if ($_.LocalProfit -gt 0 ) {[math]::Round($_.LocalProfit, 2)}}; Align = 'right'}
+                @{Label = $Config.LocalCurrency + "Profit"; Expression = {if ($_.LocalProfit -gt 0 ) {[math]::Round($_.LocalProfit, 2)}}; Align = 'right'}
             )
 
             $SelectedOption = Read-Host -Prompt 'SELECT ONE OPTION:'

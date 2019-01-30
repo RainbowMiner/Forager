@@ -20,7 +20,7 @@ $Result = @()
 
 if ($Querymode -eq "info") {
     $Result = [PSCustomObject]@{
-        Disclaimer               = "No registration, No autoexchange, need wallet for each coin on config.ini"
+        Disclaimer               = "No registration, No autoexchange, need wallet for each coin"
         ActiveOnManualMode       = $ActiveOnManualMode
         ActiveOnAutomaticMode    = $ActiveOnAutomaticMode
         ActiveOnAutomatic24hMode = $ActiveOnAutomatic24hMode
@@ -39,7 +39,7 @@ if ($Querymode -eq "speed") {
                 PoolName   = $Name
                 Version    = $_.version
                 Algorithm  = Get-AlgoUnifiedName $_.Algo
-                WorkerName = (($_.password -split 'ID=')[1] -split ',')[0]
+                WorkerName = (($_.password -split 'id=')[1] -split ',')[0]
                 Diff       = $_.difficulty
                 Rejected   = $_.rejected
                 HashRate   = $_.accepted
@@ -91,8 +91,8 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
             Protocol              = "stratum+tcp"
             Host                  = $Coin.algo + '.' + $MineUrl
             Port                  = [int]$Coin.port
-            User                  = $CoinsWallets.$Pool_Symbol
-            Pass                  = "c=$Pool_Symbol,ID=#WorkerName#"
+            User                  = $Wallets.$Pool_Symbol
+            Pass                  = "c=$Pool_Symbol,id=#WorkerName#"
             Location              = $Location
             SSL                   = $false
             Symbol                = $Pool_Symbol

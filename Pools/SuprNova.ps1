@@ -9,11 +9,11 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $false
 $ActiveOnAutomatic24hMode = $false
-$WalletMode = "APIKEY"
+$WalletMode = "ApiKey"
 $RewardType = "PPLS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
         Disclaimer               = "Must register and set wallet for each coin on web"
         ActiveOnManualMode       = $ActiveOnManualMode
@@ -25,20 +25,20 @@ if ($Querymode -eq "info") {
     }
 }
 
-if ($Querymode -eq "APIKEY") {
+if ($Querymode -eq "ApiKey") {
     $Request = Invoke-APIRequest -Url $("https://" + $Info.Symbol + ".suprnova.cc/index.php?page=api&action=getuserbalance&api_key=" + $Info.ApiKey + "&id=") -Retry 3 |
         Select-Object -ExpandProperty getuserbalance | Select-Object -ExpandProperty data
 
     if ($Request) {
         $Result = [PSCustomObject]@{
             Pool     = $name
-            currency = $Info.Symbol
-            balance  = $Request.confirmed + $Request.unconfirmed
+            Currency = $Info.Symbol
+            Balance  = $Request.confirmed + $Request.unconfirmed
         }
     }
 }
 
-if ($Querymode -eq "speed") {
+if ($Querymode -eq "Speed") {
     $Request = Invoke-APIRequest -Url $("https://" + $Info.Symbol + ".suprnova.cc/index.php?page=api&action=getuserworkers&api_key=" + $Info.ApiKey) -Retry 1 |
         Select-Object -ExpandProperty getuserworkers | Select-Object -ExpandProperty data
 
@@ -54,10 +54,10 @@ if ($Querymode -eq "speed") {
     }
 }
 
-if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
+if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
 
-    if (!$UserName) {
-        Write-Warning "$Name UserName not defined in config.ini"
+    if (-not $Config.UserName -and -not $PoolConfig.$Name.UserName) {
+        Write-Warning "$Name UserName not defined"
         Exit
     }
 
@@ -104,10 +104,10 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
             Protocol              = "stratum+tcp"
             ProtocolSSL           = $(if ($_.Algo -eq "Lyra2v2") {"stratum+tls"} else {"ssl"})
             Host                  = $_.server
-            HostSSL               = $(if (!$_.serverSSL) {$_.serverSSL} else {$_.server})
+            HostSSL               = $(if (-not $_.serverSSL) {$_.serverSSL} else {$_.server})
             Port                  = $_.Port
             PortSSL               = $_.PortSSL
-            User                  = "$UserName.#WorkerName#"
+            User                  = $(if ($PoolConfig.$Name.UserName) {$PoolConfig.$Name.UserName} else {$Config.UserName}) + ".#WorkerName#"
             Pass                  = "x"
             Location              = $_.Location
             SSL                   = [bool]$_.SSL

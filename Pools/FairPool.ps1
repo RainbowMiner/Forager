@@ -8,13 +8,13 @@ param(
 $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $false
-$WalletMode = "WALLET"
+$WalletMode = "Wallet"
 $RewardType = "PPLS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
-        Disclaimer            = "Must set wallet for each coin on web, set login on config.ini file"
+        Disclaimer            = "No registration, No autoexchange, need wallet for each coin"
         ActiveOnManualMode    = $ActiveOnManualMode
         ActiveOnAutomaticMode = $ActiveOnAutomaticMode
         ApiData               = $true
@@ -23,7 +23,7 @@ if ($Querymode -eq "info") {
     }
 }
 
-if ($Querymode -eq "speed") {
+if ($Querymode -eq "Speed") {
     $Request = Invoke-APIRequest -Url $("https://" + $Info.Symbol + ".fairpool.cloud/api/stats?login=" + ($Info.user -split "\+")[0]) -Retry 1
 
     if ($Request -and $Request.Workers) {
@@ -38,7 +38,7 @@ if ($Querymode -eq "speed") {
     }
 }
 
-if ($Querymode -eq "wallet") {
+if ($Querymode -eq "Wallet") {
     $Request = Invoke-APIRequest -Url $("https://" + $Info.Symbol + ".fairpool.cloud/api/stats?login=" + ($Info.User -split "\+")[0]) -Retry 3
     if ($Request) {
         switch ($Info.Symbol) {
@@ -53,14 +53,14 @@ if ($Querymode -eq "wallet") {
         }
         $Result = [PSCustomObject]@{
             Pool     = $name
-            currency = $Info.Symbol
-            balance  = ($Request.balance + $Request.unconfirmed ) / $Divisor
+            Currency = $Info.Symbol
+            Balance  = ($Request.balance + $Request.unconfirmed ) / $Divisor
         }
         Remove-Variable Request
     }
 }
 
-if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
+if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
     $Pools = @()
 
     $Pools += [PSCustomObject]@{coin = "Akroma"; algo = "Ethash"; symbol = "AKA"; port = 2222; fee = 0.01}
@@ -85,14 +85,14 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
     $Pools += [PSCustomObject]@{coin = "Swap"; algo = "CnFreeHaven"; symbol = "XWP"; port = 6080; fee = 0.01}
 
     $Pools | ForEach-Object {
-        if ($CoinsWallets.($_.symbol)) {
+        if ($Wallets.($_.symbol)) {
             $Result += [PSCustomObject]@{
                 Algorithm             = $_.Algo
                 Info                  = $_.Coin
                 Protocol              = "stratum+tcp"
                 Host                  = "mine." + $_.symbol + ".fairpool.cloud"
                 Port                  = $_.Port
-                User                  = $CoinsWallets.($_.symbol) + "+#WorkerName#"
+                User                  = $Wallets.($_.symbol) + "+#WorkerName#"
                 Pass                  = "x"
                 Location              = "US"
                 SSL                   = $false

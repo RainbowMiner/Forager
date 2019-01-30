@@ -11,14 +11,14 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $false
 $ActiveOnAutomatic24hMode = $false
-$WalletMode = "NONE"
+$WalletMode = "None"
 $Location = 'US'
 $RewardType = 'PPLS'
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
-        Disclaimer               = "No registration, No autoexchange, need wallet for each coin on config.txt"
+        Disclaimer               = "No registration, No autoexchange, need wallet for each coin"
         ActiveOnManualMode       = $ActiveOnManualMode
         ActiveOnAutomaticMode    = $ActiveOnAutomaticMode
         ActiveOnAutomatic24hMode = $ActiveOnAutomatic24hMode
@@ -29,7 +29,7 @@ if ($Querymode -eq "info") {
 }
 
 
-if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
+if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
     $Pools = @()
 
     $Pools += [PSCustomObject]@{coin = "Aeon"; symbol = "AEON"; algo = "CnLiteV7"; port = 5541; fee = 0.0; walletSymbol = "Aeon"; server = "aeon.ingest.cryptoknight.cc"}
@@ -60,8 +60,7 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
 
     $Pools | ForEach-Object {
 
-        $Wallet = $CoinsWallets.get_item($_.symbol)
-        if ($Wallet) {
+        if ($Wallets.($_.symbol)) {
 
             $Result += [PSCustomObject]@{
                 Algorithm                = $_.algo
@@ -69,7 +68,7 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
                 Protocol                 = "stratum+tcp"
                 Host                     = $_.server
                 Port                     = $_.port
-                User                     = $Wallet
+                User                     = $Wallets.($_.symbol)
                 Pass                     = "#WorkerName#"
                 Location                 = $Location
                 SSL                      = $false

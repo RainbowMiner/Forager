@@ -26,33 +26,19 @@ function Set-NvidiaPowerLimit ([int]$PowerLimitPercent, [string]$Devices) {
     Remove-Variable newprocess
 }
 
-function Get-ComputerStats {
-    $avg = Get-CimInstance win32_processor | Measure-Object -property LoadPercentage -Average | ForEach-Object {$_.Average}
-    $mem = Get-CimInstance win32_operatingsystem | ForEach-Object {"{0:N2}" -f ((($_.TotalVisibleMemorySize - $_.FreePhysicalMemory) * 100) / $_.TotalVisibleMemorySize)}
-    $memV = Get-CimInstance win32_operatingsystem | ForEach-Object {"{0:N2}" -f ((($_.TotalVirtualMemorySize - $_.FreeVirtualMemory) * 100) / $_.TotalVirtualMemorySize)}
-    $free = Get-CimInstance Win32_Volume -Filter "DriveLetter = 'C:'" | ForEach-Object {"{0:N2}" -f (($_.FreeSpace / $_.Capacity) * 100)}
-    $nprocs = (Get-Process).count
-    if (Get-Command "Get-NetTCPConnection" -ErrorAction SilentlyContinue) {
-        $Conns = (Get-NetTCPConnection).count
-    } else {
-        $Error.Remove($Error[$Error.Count - 1])
-    }
-    "AverageCpu = $avg % | MemoryUsage = $mem % | VirtualMemoryUsage = $memV % | PercentCFree = $free % | Processes = $nprocs | Connections = $Conns"
-}
-
 function Send-ErrorsToLog ($LogFile) {
 
     for ($i = 0; $i -lt $error.count; $i++) {
         if ($error[$i].InnerException.Paramname -ne "scopeId") {
             # errors in debug
             $Msg = "###### ERROR ##### " + [string]($error[$i]) + ' ' + $error[$i].ScriptStackTrace
-            Log-Message $msg -Severity Error -NoEcho
+            Write-Log $msg -Severity Error -NoEcho
         }
     }
     $error.clear()
 }
 
-function Replace-ForEachDevice {
+function Edit-ForEachDevice {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ConfigFileArguments,
@@ -68,9 +54,11 @@ function Replace-ForEachDevice {
 
         $Match.Matches | ForEach-Object {
             $Base = $_.value -replace "#ForEachDevice#" -replace "#EndForEachDevice#"
-            $Final = ""
             $Index = 0
-            $Devices.Devices -split ',' | ForEach-Object {$Final += ($base -replace "#DeviceID#", $_ -replace "#DeviceIndex#", $Index); $Index++}
+            $Final = $Devices.Devices -split ',' | ForEach-Object {
+                $Base -replace "#DeviceID#", $_ -replace "#DeviceIndex#", $Index
+                $Index++
+            }
             $ConfigFileArguments = $ConfigFileArguments.Substring(0, $_.index) + $Final + $ConfigFileArguments.Substring($_.index + $_.Length, $ConfigFileArguments.Length - ($_.index + $_.Length))
         }
     }
@@ -129,13 +117,13 @@ function Exit-Process {
             if ($sw.Elapsed.TotalSeconds -gt 1) {
                 Stop-Process -InputObject $Process -Force
             }
-            if (!$Process.HasExited) {
+            if (-not $Process.HasExited) {
                 Start-Sleep -Milliseconds 1
             }
-        } while (!$Process.HasExited)
+        } while (-not $Process.HasExited)
     } finally {
         $sw.Stop()
-        if (!$Process.HasExited) {
+        if (-not $Process.HasExited) {
             Stop-Process -InputObject $Process -Force
         }
     }
@@ -320,7 +308,7 @@ function Get-DevicesInformation ($Types) {
     $Devices
 }
 
-function Print-DevicesInformation ($Devices) {
+function Out-DevicesInformation ($Devices) {
 
     $Devices | Where-Object Type -ne 'CPU' | Sort-Object Type | Format-Table -Wrap (
         @{Label = "Id"; Expression = {$_.Id}; Align = 'right'},
@@ -370,6 +358,7 @@ Function Get-MiningTypes () {
             $Devs
         })
 
+
     # # start fake
     # $OCLDevices = @()
     # $OCLDevices += [PSCustomObject]@{Name = 'Ellesmere'; Vendor = 'Advanced Micro Devices, Inc.'; GlobalMemSize = 8GB; PlatformID = 0; Type = 'Gpu'}
@@ -379,7 +368,9 @@ Function Get-MiningTypes () {
     # $OCLDevices += [PSCustomObject]@{Name = 'GeForce 1060'; Vendor = 'NVIDIA Corporation'; GlobalMemSize = 3GB; PlatformID = 1; Type = 'Gpu'}
     # # end fake
 
-    $Types0 = Get-ConfigVariable "GpuGroups"
+    $global:Devices = Get-Content .\Config\Devices.json | ConvertFrom-Json
+    # $Types0 = @($Devices | Where-Object Enabled)
+    $Types0 = $null
 
     if ($null -eq $Types0 -or $All) {
         # Autodetection on, must add types manually
@@ -400,7 +391,7 @@ Function Get-MiningTypes () {
 
                 $MemoryGB = [int]($_.GlobalMemSize / 1GB)
 
-                if ((Get-ConfigVariable "GpuGroupByType") -eq "Enabled") {
+                if ($Config.GpuGroupByType) {
                     $Name_Norm = $Type
                 } else {
                     $Name_Norm = (Get-Culture).TextInfo.ToTitleCase(($_.Name)) -replace "[^A-Z0-9]"
@@ -438,7 +429,7 @@ Function Get-MiningTypes () {
 
     #if cpu mining is enabled add a new group
     if (
-        (!$Filter -and (Get-ConfigVariable "CPUMining") -eq 'ENABLED') -or
+        (-not $Filter -and $Config.CpuMining) -or
         $Filter -contains "CPU" -or
         $Types0.Length -eq 0
     ) {
@@ -458,10 +449,9 @@ Function Get-MiningTypes () {
         }
     }
 
-    $Types = @()
     $TypeID = 0
-    $Types0 | ForEach-Object {
-        if (!$Filter -or (Compare-Object $_.GroupName $Filter -IncludeEqual -ExcludeDifferent)) {
+    $Types = $Types0 | ForEach-Object {
+        if (-not $Filter -or (Compare-Object $_.GroupName $Filter -IncludeEqual -ExcludeDifferent)) {
 
             $_ | Add-Member ID $TypeID
             $TypeID++
@@ -483,22 +473,28 @@ Function Get-MiningTypes () {
             if ($null -eq $_.MemoryGB) {$_ | Add-Member MemoryGB ([int](($_.OCLDevices | Measure-Object -Property GlobalMemSize -Minimum | Select-Object -ExpandProperty Minimum) / 1GB ))}
             if ($null -eq $_.DevicesMask) {$_ | Add-Member DevicesMask ('{0:X}' -f [int]($_.DevicesArray | ForEach-Object { [System.Math]::Pow(2, $_) } | Measure-Object -Sum).Sum)}
 
-            $_.PowerLimits = @([int[]]($_.PowerLimits -split ',') | Sort-Object -Descending -Unique)
 
-            if (
-                $_.PowerLimits.Count -eq 0 -or
-                @('Intel') -contains $_.Type -or
-                (@('AMD') -contains $_.Type -and !$abControl)
-            ) {$_.PowerLimits = @(0)}
+            if ($_.PowerLimits.Count -eq 0) {
+                $_ | Add-Member PowerLimits @(0)
+            } elseif (
+                $_.Type -eq 'Intel' -or
+                ($_.Type -eq 'AMD' -and -not $abControl)
+            ) {
+                $_.PowerLimits = @(0)
+            } else {
+                $_.PowerLimits = @([int[]]($_.PowerLimits -split ',') | Sort-Object -Descending -Unique)
+            }
 
-            $_ | Add-Member Algorithms ((Get-ConfigVariable ("Algorithms_" + $_.Type)) -split ',')
-            $Types += $_
+            if ($_.Algorithms.Count -eq 0) {$_ | Add-Member Algorithms $Devices.($_.GroupName).Algorithms}
+            if ($_.Algorithms.Count -eq 1) {$_.Algorithms = @($_.Algorithms -split ',') }
+
+            $_
         }
     }
     $Types #return
 }
 
-Function Log-Message {
+Function Write-Log {
     param(
         [Parameter()]
         [string]$Message,
@@ -521,7 +517,7 @@ Function Log-Message {
         }
     }
 }
-Set-Alias Log Log-Message
+Set-Alias Log Write-Log
 
 
 Function Read-KeyboardTimed {
@@ -546,22 +542,22 @@ Function Read-KeyboardTimed {
     $KeyPressed
 }
 
-function Clear-ScreenZone {
-    param(
-        [Parameter(Mandatory = $true)]
-        [int]$startY,
-        [Parameter(Mandatory = $true)]
-        [int]$endY
-    )
+# function Clear-ScreenZone {
+#     param(
+#         [Parameter(Mandatory = $true)]
+#         [int]$startY,
+#         [Parameter(Mandatory = $true)]
+#         [int]$endY
+#     )
 
-    $BlankLine = " " * $Host.UI.RawUI.WindowSize.Width
+#     $BlankLine = " " * $Host.UI.RawUI.WindowSize.Width
 
-    Set-ConsolePosition 0 $start
+#     Set-ConsolePosition 0 $start
 
-    for ($i = $startY; $i -le $endY; $i++) {
-        $BlankLine | Out-Host
-    }
-}
+#     for ($i = $startY; $i -le $endY; $i++) {
+#         $BlankLine | Out-Host
+#     }
+# }
 
 function Invoke-TCPRequest {
     param(
@@ -667,7 +663,7 @@ function Invoke-APIRequest {
     $CachePath = '.\Cache\'
     $CacheFile = $CachePath + [System.Web.HttpUtility]::UrlEncode($Url) + '.json'
 
-    if (!(Test-Path -Path $CachePath)) { New-Item -Path $CachePath -ItemType directory -Force | Out-Null }
+    if (-not (Test-Path -Path $CachePath)) { New-Item -Path $CachePath -ItemType directory -Force | Out-Null }
     if (Test-Path -LiteralPath $CacheFile -NewerThan (Get-Date).AddMinutes( - $Age)) {
         $Response = Get-Content -Path $CacheFile | ConvertFrom-Json
     } else {
@@ -814,7 +810,6 @@ function Get-LiveHashRate {
                 }
             }
 
-
             "SRB" {
                 $Request = Invoke-HTTPRequest -Port $Miner.ApiPort
                 if ($Request) {
@@ -856,6 +851,14 @@ function Get-LiveHashRate {
                 if ($Request) {
                     $Data = $Request | ConvertFrom-Json
                     $HashRate = [double]$Data.miner.total_hashrate
+                }
+            }
+
+            "Mkx" {
+                $Request = Get-TCPResponse -Port $Miner.ApiPort -Request 'stats'
+                if ($Request) {
+                    $Data = $Request.Substring($Request.IndexOf("{"), $Request.LastIndexOf("}") - $Request.IndexOf("{") + 1) | ConvertFrom-Json
+                    $HashRate = [double]$Data.gpus.hashrate * 1e6
                 }
             }
 
@@ -1003,7 +1006,7 @@ function Start-SubProcess {
         Start-Sleep -Seconds 1
         $JobOutput = Receive-Job $Job
     }
-    while ($JobOutput -eq $null)
+    while (-not $JobOutput)
 
     if ($JobOutput.ProcessId -gt 0) {
         $Process = Get-Process | Where-Object Id -eq $JobOutput.ProcessId
@@ -1034,7 +1037,7 @@ function Expand-WebRequest {
     try {
         if (Test-Path -LiteralPath $FilePath) {
             if ($SHA256 -and (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash -ne $SHA256) {
-                Log-Message "Existing file hash doesn't match. Will re-download." -Severity Warn
+                Write-Log "Existing file hash doesn't match. Will re-download." -Severity Warn
                 Remove-Item $FilePath
             }
         }
@@ -1043,7 +1046,7 @@ function Expand-WebRequest {
         }
         if (Test-Path -LiteralPath $FilePath) {
             if ($SHA256 -and (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash -ne $SHA256) {
-                Log-Message "File hash doesn't match. Removing file." -Severity Warn
+                Write-Log "File hash doesn't match. Removing file." -Severity Warn
             } elseif (@('.msi', '.exe') -contains (Get-Item $FilePath).Extension) {
                 Start-Process $FilePath "-qb" -Wait
             } else {
@@ -1062,13 +1065,10 @@ function Get-Pools {
         [String]$Querymode = 'core',
         [Parameter(Mandatory = $false)]
         [array]$PoolsFilterList = $null,
-        #[array]$PoolsFilterList='Mining_pool_hub',
         [Parameter(Mandatory = $false)]
         [array]$CoinFilterList,
-        #[array]$CoinFilterList = ('GroestlCoin','Feathercoin','zclassic'),
         [Parameter(Mandatory = $false)]
         [string]$Location = $null,
-        #[string]$Location='EU'
         [Parameter(Mandatory = $false)]
         [array]$AlgoFilterList,
         [Parameter(Mandatory = $false)]
@@ -1076,11 +1076,7 @@ function Get-Pools {
     )
     #in detail mode returns a line for each pool/algo/coin combination, in info mode returns a line for pool
 
-    if ($location -eq 'GB') {$location = 'EU'}
-
-    $PoolsFolderContent = Get-ChildItem ($PSScriptRoot + '\pools') -File | Where-Object {$PoolsFilterList.Count -eq 0 -or (Compare-Object $PoolsFilterList $_.BaseName -IncludeEqual -ExcludeDifferent | Measure-Object).Count -gt 0}
-
-    $ChildItems = @()
+    $PoolsFolderContent = Get-ChildItem ($PSScriptRoot + '\Pools\*') -File -Include '*.ps1' | Where-Object {$PoolsFilterList.Count -eq 0 -or (Compare-Object $PoolsFilterList $_.BaseName -IncludeEqual -ExcludeDifferent | Measure-Object).Count -gt 0}
 
     if ($null -eq $Info) { $Info = [PSCustomObject]@{}
     }
@@ -1089,10 +1085,10 @@ function Get-Pools {
 
     $Info | Add-Member SharedFile [string]$null
 
-    $PoolsFolderContent | ForEach-Object {
+    $ChildItems = $PoolsFolderContent | ForEach-Object {
 
         $Basename = $_.BaseName
-        $SharedFile = $PSScriptRoot + "\" + $Basename + [string](Get-Random -minimum 0 -maximum 9999999) + ".tmp"
+        $SharedFile = $PSScriptRoot + "\Cache\" + $Basename + [string](Get-Random -minimum 0 -maximum 9999999) + ".tmp"
         $Info.SharedFile = $SharedFile
 
         if (Test-Path $SharedFile) {Remove-Item $SharedFile}
@@ -1101,7 +1097,7 @@ function Get-Pools {
             $Content = Get-Content $SharedFile | ConvertFrom-Json
             Remove-Item $SharedFile
         } else { $Content = $null }
-        $Content | ForEach-Object {$ChildItems += [PSCustomObject]@{Name = $Basename; Content = $_}}
+        $Content | ForEach-Object {[PSCustomObject]@{Name = $Basename; Content = $_}}
     }
 
     $AllPools = $ChildItems | ForEach-Object {if ($_.Content) {$_.Content | Add-Member @{Name = $_.Name} -PassThru}}
@@ -1110,31 +1106,31 @@ function Get-Pools {
 
     #Apply filters
     $AllPools2 = @()
-    if ($Querymode -eq "core" -or $Querymode -eq "menu" ) {
+    if ($Querymode -eq "Core" -or $Querymode -eq "Menu" ) {
         foreach ($Pool in $AllPools) {
             #must have wallet
-            if (!$Pool.User) {continue}
+            if (-not $Pool.User) {continue}
 
             # Include pool algos and coins
             if (
                 (
-                    $Config.("IncludeAlgos_" + $Pool.PoolName) -and
-                    @($Config.("IncludeAlgos_" + $Pool.PoolName) -split ',') -notcontains $Pool.Algorithm
+                    $PoolConfig.($Pool.PoolName).IncludeAlgos -and
+                    @($PoolConfig.($Pool.PoolName).IncludeAlgos -split ',') -notcontains $Pool.Algorithm
                 ) -or (
-                    $Config.("IncludeCoins_" + $Pool.PoolName) -and
-                    @($Config.("IncludeCoins_" + $Pool.PoolName) -split ',') -notcontains $Pool.Info
+                    $PoolConfig.($Pool.PoolName).IncludeCoins -and
+                    @($PoolConfig.($Pool.PoolName).IncludeCoins -split ',') -notcontains $Pool.Info
                 )
             ) {
-                Log-Message "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Include filter" -Severity Debug
+                Write-Log "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Include filter" -Severity Debug
                 continue
             }
 
             # Exclude pool algos and coins
             if (
-                @($Config.("ExcludeAlgos_" + $Pool.PoolName) -split ',') -contains $Pool.Algorithm -or
-                @($Config.("ExcludeCoins_" + $Pool.PoolName) -split ',') -contains $Pool.Info
+                @($PoolConfig.($Pool.PoolName).ExcludeAlgos -split ',') -contains $Pool.Algorithm -or
+                @($PoolConfig.($Pool.PoolName).ExcludeCoins -split ',') -contains $Pool.Info
             ) {
-                Log-Message "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Exclude filter" -Severity Debug
+                Write-Log "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Exclude filter" -Severity Debug
                 continue
             }
 
@@ -1158,11 +1154,11 @@ function Get-Pools {
                     ## Apply pool fees and pool factors
                     if ($Pool.Price) {
                         $Pool.Price *= 1 - [double]$Pool.Fee
-                        $Pool.Price *= $(if ($Config."PoolProfitFactor_$($Pool.Name)") {[double]$Config."PoolProfitFactor_$($Pool.Name)"} else {1})
+                        $Pool.Price *= $(if ($PoolConfig.($Pool.PoolName).PoolProfitFactor) {[double]$PoolConfig.($Pool.PoolName).PoolProfitFactor} else {1})
                     }
                     if ($Pool.Price24h) {
                         $Pool.Price24h *= 1 - [double]$Pool.Fee
-                        $Pool.Price24h *= $(if ($Config."PoolProfitFactor_$($Pool.Name)") {[double]$Config."PoolProfitFactor_$($Pool.Name)"} else {1})
+                        $Pool.Price24h *= $(if ($PoolConfig.($Pool.PoolName).PoolProfitFactor) {[double]$PoolConfig.($Pool.PoolName).PoolProfitFactor} else {1})
                     }
                     $AllPools2 += $Pool
                 }
@@ -1177,27 +1173,27 @@ function Get-Pools {
     $Return
 }
 
-function Get-Config {
+# function Get-Config {
 
-    $Result = @{}
-    switch -regex -file config.ini {
-        "^\s*(\w+)\s*=\s*(.*)" {
-            $name, $value = $matches[1..2]
-            $Result[$name] = $value.Trim()
-        }
-    }
-    $Result # Return Value
-}
+#     $Result = @{}
+#     switch -regex -file config.ini {
+#         "^\s*(\w+)\s*=\s*(.*)" {
+#             $name, $value = $matches[1..2]
+#             $Result[$name] = $value.Trim()
+#         }
+#     }
+#     $Result # Return Value
+# }
 
-Function Get-ConfigVariable {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$VarName
-    )
+# Function Get-ConfigVariable {
+#     param(
+#         [Parameter(Mandatory = $true)]
+#         [string]$VarName
+#     )
 
-    $Result = (Get-Config).$VarName
-    $Result # Return Value
-}
+#     $Result = (Get-Config).$VarName
+#     $Result # Return Value
+# }
 
 function Get-BestHashRateAlgo {
     param(
@@ -1218,12 +1214,11 @@ function Get-BestHashRateAlgo {
             $BestHashRate = $Hrs
             $Miner = ($_.pschildname -split '_')[0]
         }
-        $Return = [PSCustomObject]@{
+        [PSCustomObject]@{
             HashRate = $BestHashRate
             Miner    = $Miner
         }
     }
-    $Return
 }
 
 function Set-ConsolePosition ([int]$x, [int]$y) {
@@ -1245,7 +1240,7 @@ function Get-ConsolePosition ([ref]$x, [ref]$y) {
     remove-variable position
 }
 
-function Print-HorizontalLine ([string]$Title) {
+function Out-HorizontalLine ([string]$Title) {
 
     $Width = $Host.UI.RawUI.WindowSize.Width
     if ([string]::IsNullOrEmpty($Title)) {$str = "-" * $Width}
@@ -1258,9 +1253,6 @@ function Print-HorizontalLine ([string]$Title) {
 
 function Set-WindowSize ([int]$Width, [int]$Height) {
     #zero not change this axis
-
-    $pshost = Get-Host
-    $RawUI = $pshost.UI.RawUI
 
     #Buffer must be always greater than windows size
 
@@ -1325,7 +1317,7 @@ function Get-HashRates {
     if ($AlgoLabel -eq "") {$AlgoLabel = 'X'}
     $Pattern = $PSScriptRoot + "\Stats\" + $MinerName + "_" + $Algorithm + "_" + $GroupName + "_" + $AlgoLabel + "_PL" + $PowerLimit + "_HashRate"
 
-    if (!(Test-Path -path "$Pattern.csv")) {
+    if (-not (Test-Path -path "$Pattern.csv")) {
         if (Test-Path -path "$Pattern.txt") {
             $Content = (Get-Content -path "$Pattern.txt")
             try {$Content = $Content | ConvertFrom-Json} catch {
@@ -1338,7 +1330,7 @@ function Get-HashRates {
         $Content = (Get-Content -path "$Pattern.csv")
         try {$Content = $Content | ConvertFrom-Csv} catch {
             #if error from convert from json delete file
-            Log-Message "Corrupted file $Pattern.csv, deleting" -Severity Warn
+            Write-Log "Corrupted file $Pattern.csv, deleting" -Severity Warn
             Remove-Item -path "$Pattern.csv"
         }
     }
@@ -1387,37 +1379,37 @@ function Get-Stats {
     if ($AlgoLabel -eq "") {$AlgoLabel = 'X'}
     $Pattern = $PSScriptRoot + "\Stats\" + $MinerName + "_" + $Algorithm + "_" + $GroupName + "_" + $AlgoLabel + "_PL" + $PowerLimit + "_stats"
 
-    if (!(Test-Path -path "$Pattern.json")) {
+    if (-not (Test-Path -path "$Pattern.json")) {
         if (Test-Path -path "$Pattern.txt") {Rename-Item -Path "$Pattern.txt" -NewName "$Pattern.json"}
     } else {
         $Content = (Get-Content -path "$Pattern.json")
         try {$Content = $Content | ConvertFrom-Json} catch {
             #if error from convert from json delete file
-            Log-Message "Corrupted file $Pattern.json, deleting" -Severity Warn
+            Write-Log "Corrupted file $Pattern.json, deleting" -Severity Warn
             Remove-Item -path "$Pattern.json"
         }
     }
     $Content
 }
-function Get-AllStats {
-    $Stats = @()
-    if (-not (Test-Path "Stats")) {New-Item "Stats" -ItemType "directory" | Out-Null}
-    Get-ChildItem "Stats" -Filter "*_stats.json" | Foreach-Object {
-        $Name = $_.BaseName
-        $_ | Get-Content | ConvertFrom-Json | ForEach-Object {
-            $Values = $Name -split '_'
-            $Stats += @{
-                MinerName  = $Values[0]
-                Algorithm  = $Values[1]
-                GroupName  = $Values[2]
-                AlgoLabel  = $Values[3]
-                PowerLimit = ($Values[4] -split 'PL')[-1]
-                Stats      = $_
-            }
-        }
-    }
-    Return $Stats
-}
+# function Get-AllStats {
+#     $Stats = @()
+#     if (-not (Test-Path "Stats")) {New-Item "Stats" -ItemType "directory" | Out-Null}
+#     Get-ChildItem "Stats" -Filter "*_stats.json" | Foreach-Object {
+#         $Name = $_.BaseName
+#         $_ | Get-Content | ConvertFrom-Json | ForEach-Object {
+#             $Values = $Name -split '_'
+#             $Stats += @{
+#                 MinerName  = $Values[0]
+#                 Algorithm  = $Values[1]
+#                 GroupName  = $Values[2]
+#                 AlgoLabel  = $Values[3]
+#                 PowerLimit = ($Values[4] -split 'PL')[-1]
+#                 Stats      = $_
+#             }
+#         }
+#     }
+#     Return $Stats
+# }
 
 
 function Set-Stats {
@@ -1462,17 +1454,17 @@ function Start-Downloader {
                 $null = New-Item (Split-Path $Path) -ItemType "Directory"
                 (New-Object System.Net.WebClient).DownloadFile($URI, $Path)
                 if ($SHA256 -and (Get-FileHash -Path $Path -Algorithm SHA256).Hash -ne $SHA256) {
-                    Log-Message "File hash doesn't match. Removing file." -Severity Warn
+                    Write-Log "File hash doesn't match. Removing file." -Severity Warn
                     Remove-Item $Path
                 }
             } else {
                 # downloading an archive or installer
-                Log-Message "Downloading $URI" -Severity Info
+                Write-Log "Downloading $URI" -Severity Info
                 Expand-WebRequest -URI $URI -Path $ExtractionPath -SHA256 $SHA256 -ErrorAction Stop
             }
         } catch {
             $Message = "Cannot download $URI"
-            Log-Message $Message -Severity Warn
+            Write-Log $Message -Severity Warn
         }
     }
 }
@@ -1552,23 +1544,70 @@ function Get-CoinSymbol ([string]$Coin) {
     }
 }
 
+# function Get-EquihashCoinPers {
+#     [CmdletBinding()]
+#     param(
+#         [Parameter(Mandatory = $false)]
+#         [String]$Coin = "",
+#         [Parameter(Mandatory = $false)]
+#         [String]$Default = "auto"
+#     )
+#     $Coins = Get-Content .\Includes\equihashcoins.json | ConvertFrom-Json
+#     if ($Coin -and $Coins.ContainsKey($Coin)) {
+#         $Coins[$Coin]
+#     } else {
+#         $Default
+#     }
+# }
+
 function Test-DeviceGroupsConfig ($Types) {
     $Devices = Get-DevicesInformation $Types
     $Types | Where-Object Type -ne 'CPU' | ForEach-Object {
         $DetectedDevices = @()
         $DetectedDevices += $Devices | Where-Object Group -eq $_.GroupName
         if ($DetectedDevices.count -eq 0) {
-            Log-Message "No Devices for group " + $_.GroupName + " was detected, activity based watchdog will be disabled for that group, this can happens if AMD beta blockchain drivers are installed or incorrect gpugroups config" -Severity Warn
+            Write-Log "No Devices for group " + $_.GroupName + " was detected, activity based watchdog will be disabled for that group, this can happens if AMD beta blockchain drivers are installed or incorrect gpugroups config" -Severity Warn
             Start-Sleep -Seconds 5
         } elseif ($DetectedDevices.count -ne $_.DevicesCount) {
-            Log-Message "Mismatching Devices for group " + $_.GroupName + " was detected, check gpugroups config and gpulist.bat" -Severity Warn
+            Write-Log "Mismatching Devices for group " + $_.GroupName + " was detected, check gpugroups config and gpulist.bat" -Severity Warn
             Start-Sleep -Seconds 5
         }
     }
     $TotalMem = (($Types | Where-Object Type -ne 'CPU').OCLDevices.GlobalMemSize | Measure-Object -Sum).Sum / 1GB
     $TotalSwap = (Get-WmiObject Win32_PageFile | Select-Object -ExpandProperty FileSize | Measure-Object -Sum).Sum / 1GB
     if ($TotalMem -gt $TotalSwap) {
-        Log-Message "Make sure you have at least $TotalMem GB swap configured" -Severity Warn
+        Write-Log "Make sure you have at least $TotalMem GB swap configured" -Severity Warn
         Start-Sleep -Seconds 5
+    }
+}
+
+function Start-Autoexec {
+    [cmdletbinding()]
+    param(
+        [ValidateRange(-2, 3)]
+        [Parameter(Mandatory = $false)]
+        [Int]$Priority = 0
+    )
+    if (-not (Test-Path ".\Config\autoexec.txt") -and (Test-Path ".\Data\autoexec.default.txt")) {Copy-Item ".\Data\autoexec.default.txt" ".\Config\autoexec.txt" -Force -ErrorAction Ignore}
+    [System.Collections.ArrayList]$Script:AutoexecCommands = @()
+    foreach ($cmd in @(Get-Content ".\Config\autoexec.txt" -ErrorAction Ignore | Select-Object)) {
+        if ($cmd -match "^[\s\t]*`"(.+?)`"(.*)$") {
+            try {
+                $Job = Start-SubProcess -FilePath "$($Matches[1])" -ArgumentList "$($Matches[2].Trim())" -WorkingDirectory (Split-Path "$($Matches[1])") -Priority $Priority
+                if ($Job) {
+                    $Job | Add-Member FilePath "$($Matches[1])" -Force
+                    $Job | Add-Member Arguments "$($Matches[2].Trim())" -Force
+                    $Job | Add-Member HasOwnMinerWindow $true -Force
+                    Write-Log "Autoexec command started: $($Matches[1]) $($Matches[2].Trim())"
+                    $Script:AutoexecCommands.Add($Job) >$null
+                }
+            } catch {}
+        }
+    }
+}
+
+function Stop-Autoexec {
+    $Script:AutoexecCommands | Where-Object Process | Foreach-Object {
+        Stop-SubProcess -Job $_ -Title "Autoexec command" -Name "$($_.FilePath) $($_.Arguments)"
     }
 }

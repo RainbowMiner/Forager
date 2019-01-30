@@ -11,11 +11,11 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $false
 $ActiveOnAutomatic24hMode = $false
-$WalletMode = "NONE"
+$WalletMode = "None"
 $RewardType = "PPS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
         Disclaimer               = "Must register and set wallet for each coin on web"
         ActiveOnManualMode       = $ActiveOnManualMode
@@ -27,10 +27,10 @@ if ($Querymode -eq "info") {
     }
 }
 
-if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
+if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
 
-    if (!$UserName) {
-        Write-Warning "$Name UserName not defined in config.ini"
+    if (-not $Config.UserName -and -not $PoolConfig.$Name.UserName) {
+        Write-Warning "$Name UserName not defined"
         Exit
     }
 
@@ -67,7 +67,7 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
             Protocol              = "stratum+tcp"
             Host                  = $_.Algo + ".mining-dutch.nl"
             Port                  = $_.Port
-            User                  = "$UserName.$WorkerName"
+            User                  = $(if ($PoolConfig.$Name.UserName) {$PoolConfig.$Name.UserName} else {$Config.UserName}) + ".#WorkerName#"
             Pass                  = "x"
             Location              = "EU"
             SSL                   = $false

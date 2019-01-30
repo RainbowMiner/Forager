@@ -11,13 +11,13 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $ActiveOnManualMode = $true
 $ActiveOnAutomaticMode = $true
 $ActiveOnAutomatic24hMode = $true
-$WalletMode = "APIKEY"
+$WalletMode = "ApiKey"
 $RewardType = "PPLS"
 $Result = @()
 
-if ($Querymode -eq "info") {
+if ($Querymode -eq "Info") {
     $Result = [PSCustomObject]@{
-        Disclaimer               = "Registration required, set UserName/WorkerName in config.ini file"
+        Disclaimer               = "Registration required, set UserName in config"
         ActiveOnManualMode       = $ActiveOnManualMode
         ActiveOnAutomaticMode    = $ActiveOnAutomaticMode
         ActiveOnAutomatic24hMode = $ActiveOnAutomatic24hMode
@@ -26,7 +26,7 @@ if ($Querymode -eq "info") {
     }
 }
 
-if ($Querymode -eq "APIKEY") {
+if ($Querymode -eq "ApiKey") {
 
     $Request = Invoke-APIRequest -Url "https://$($Info.Symbol).miningpoolhub.com/index.php?page=api&action=getdashboarddata&api_key=$($Info.ApiKey)&id=&$(Get-Date -Format "yyyy-MM-dd_HH-mm")" -Retry 3
 
@@ -34,8 +34,8 @@ if ($Querymode -eq "APIKEY") {
         $Data = $Request.getdashboarddata.data
         $Result = [PSCustomObject]@{
             Pool     = $name
-            currency = $Info.Symbol
-            balance  = $Data.balance.confirmed +
+            Currency = $Info.Symbol
+            Balance  = $Data.balance.confirmed +
             $Data.balance.unconfirmed +
             $Data.balance_for_auto_exchange.confirmed +
             $Data.balance_for_auto_exchange.unconfirmed +
@@ -46,7 +46,7 @@ if ($Querymode -eq "APIKEY") {
     }
 }
 
-if ($Querymode -eq "SPEED") {
+if ($Querymode -eq "Speed") {
 
     $Request = Invoke-APIRequest -Url "https://$($Info.Symbol).miningpoolhub.com/index.php?page=api&action=getuserworkers&api_key=$($Info.ApiKey)&$(Get-Date -Format "yyyy-MM-dd_HH-mm")" -Retry 1
 
@@ -67,16 +67,16 @@ if ($Querymode -eq "SPEED") {
     }
 }
 
-if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
+if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
 
-    if (!$UserName) {
-        Write-Warning "$Name UserName not defined in config.ini"
+    if (-not $Config.UserName -and -not $PoolConfig.$Name.UserName) {
+        Write-Warning "$Name UserName not defined"
         Exit
     }
 
     $MiningPoolHub_Request = Invoke-APIRequest -Url "https://miningpoolhub.com/index.php?page=api&action=getminingandprofitsstatistics&$(Get-Date -Format "yyyy-MM-dd_HH-mm")" -Retry 3
 
-    if (!$MiningPoolHub_Request) {
+    if (-not $MiningPoolHub_Request) {
         Write-Warning "$Name API NOT RESPONDING...ABORTING"
         Exit
     }
@@ -107,7 +107,7 @@ if (($Querymode -eq "core" ) -or ($Querymode -eq "Menu")) {
                 Protocol              = "stratum+tcp"
                 Host                  = $Server
                 Port                  = $MiningPoolHub_Port
-                User                  = "$UserName.#WorkerName#"
+                User                  = $(if ($PoolConfig.$Name.UserName) {$PoolConfig.$Name.UserName} else {$Config.UserName}) + ".#WorkerName#"
                 Pass                  = "x"
                 Location              = $Location
                 Symbol                = Get-CoinSymbol -Coin $MiningPoolHub_Coin
