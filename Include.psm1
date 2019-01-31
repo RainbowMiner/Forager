@@ -873,7 +873,6 @@ function Get-LiveHashRate {
                     $HashRate = [double]$Data.gpus.hashrate * 1e6
                 }
             }
-
         } #end switch
 
         $HashRate
