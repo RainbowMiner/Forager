@@ -467,7 +467,7 @@ while ($Quit -eq $false) {
                             '#Port#'                = $(if ($EnableSSL) {$Pool.PortSSL} else {$Pool.Port})
                             '#Login#'               = $PoolUser
                             '#Password#'            = $PoolPass
-                            '#GPUPlatform#'         = $DeviceGroup.Platform
+                            '#GPUPlatform#'         = $DeviceGroup.PlatformId
                             '#Algorithm#'           = $AlgoName
                             '#AlgorithmParameters#' = $Algo.Value
                             '#WorkerName#'          = $WorkerNameMain

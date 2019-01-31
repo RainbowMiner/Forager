@@ -377,7 +377,7 @@ function Get-Devices {
     #         $Devices | Add-Member Type $Vendors.($Devices.Vendor)
     #         $Devices | Add-Member GroupName $(($Devices.Name -replace "[^A-Z0-9]") + '_' + [int]($Devices.GlobalMemSize / 1GB) + 'gb_' + $Devices.MaxComputeUnits)
 
-    #         $Devices | Select-Object -Property GroupName, Type, Name, @{Name = "Platform"; Expression = {$_.PlatformId}}, Devices, Enabled
+    #         $Devices | Select-Object -Property GroupName, Type, Name, PlatformId, Devices, Enabled
     #     }
     # }
     if ($Config.GpuGroupByType) {
@@ -389,7 +389,7 @@ function Get-Devices {
                 $Devices | Add-Member GroupName $Vendors.($Devices.Vendor)
                 $Devices | Add-Member Enabled $true
 
-                $Devices | Select-Object -Property GroupName, Type, Name, @{Name = "Platform"; Expression = {$_.PlatformId}}, Devices, Enabled
+                $Devices | Select-Object -Property GroupName, Type, Name, PlatformId, Devices, Enabled
             }
         }
     } else {
@@ -401,7 +401,7 @@ function Get-Devices {
                 $Devices | Add-Member GroupName $(($Devices.Name -replace "[^A-Z0-9]") + '_' + [int]($Devices.GlobalMemSize / 1GB) + 'gb')
                 $Devices | Add-Member Enabled $true
 
-                $Devices | Select-Object -Property GroupName, Type, Name, @{Name = "Platform"; Expression = {$_.PlatformId}}, Devices, Enabled
+                $Devices | Select-Object -Property GroupName, Type, Name, PlatformId, Devices, Enabled
             }
         }
     }
@@ -437,10 +437,10 @@ function Get-MiningTypes () {
         [array]$Types0 = Get-Devices
 
         $Types0 += [PSCustomObject]@{
-            GroupName = 'CPU'
-            Type      = 'CPU'
-            Platform  = 0
-            Enabled   = $true
+            GroupName  = 'CPU'
+            Type       = 'CPU'
+            PlatformId = 0
+            Enabled    = $true
         }
         $Types0 | ConvertTo-Json | Set-Content .\Config\Devices.autodetect.json
     }
@@ -481,7 +481,7 @@ function Get-MiningTypes () {
                 CPU { $Pattern = '' }
             }
             $_ | Add-Member OCLDevices @($OCLDevices | Where-Object {$_.Vendor -eq $Pattern -and $_.Type -eq 'Gpu'})[$_.DevicesArray]
-            if ($null -eq $_.Platform) {$_ | Add-Member Platform ($_.OCLDevices.PlatformId | Select-Object -First 1)}
+            if ($null -eq $_.PlatformId) {$_ | Add-Member PlatformId ($_.OCLDevices.PlatformId | Select-Object -First 1)}
             if ($null -eq $_.MemoryGB) {$_ | Add-Member MemoryGB ([int](($_.OCLDevices | Measure-Object -Property GlobalMemSize -Minimum | Select-Object -ExpandProperty Minimum) / 1GB ))}
             if ($null -eq $_.DevicesMask) {$_ | Add-Member DevicesMask ('{0:X}' -f [int]($_.DevicesArray | ForEach-Object { [System.Math]::Pow(2, $_) } | Measure-Object -Sum).Sum)}
 
