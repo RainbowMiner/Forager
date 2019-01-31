@@ -394,22 +394,25 @@ while ($Quit -eq $false) {
 
         foreach ($DeviceGroup in $DeviceGroups) {
             #generate a line for each device group that has algorithm as valid
-            if ($Miner.Type -ne $DeviceGroup.type) {
-                Write-Log "$($MinerFile.pschildname) is NOT valid for $($DeviceGroup.GroupName). Skipping" -Severity Debug
+            if ($Miner.Type -ne $DeviceGroup.Type) {
+                Write-Log "$($MinerFile.BaseName) is NOT valid for $($DeviceGroup.GroupName). Skipping" -Severity Debug
                 Continue
-            } elseif ($Config.("ExcludeMiners_" + $DeviceGroup.GroupName) -and ($Config.("ExcludeMiners_" + $DeviceGroup.GroupName).split(',') | Where-Object {$MinerFile.BaseName -like $_})) {
-                Write-Log "$($MinerFile.pschildname) is Excluded for $($DeviceGroup.GroupName). Skipping" -Severity Debug
+            } elseif (
+                $Devices.($DeviceGroup.GroupName).ExcludeMiners -and
+                $Devices.($DeviceGroup.GroupName).ExcludeMiners -split ',' | Where-Object {$MinerFile.BaseName -like $_}
+            ) {
+                Write-Log "$($MinerFile.BaseName) is Excluded for $($DeviceGroup.GroupName). Skipping" -Severity Debug
                 Continue
             } else {
                 #check group and miner types are the same
-                Write-Log "$($MinerFile.pschildname) is valid for $($DeviceGroup.GroupName)" -Severity Debug
+                Write-Log "$($MinerFile.BaseName) is valid for $($DeviceGroup.GroupName)" -Severity Debug
             }
 
             foreach ($Algo in $Miner.Algorithms.PSObject.Properties) {
 
                 ##AlgoName contains real name for dual and no dual miners
                 $AlgoTmp = ($Algo.Name -split "\|")[0]
-                $AlgoLabel = ($Algo.Name -split ("\|"))[1]
+                $AlgoLabel = ($Algo.Name -split "\|")[1]
                 $AlgoName = Get-AlgoUnifiedName (($AlgoTmp -split ("_"))[0])
                 $AlgoNameDual = Get-AlgoUnifiedName (($AlgoTmp -split ("_"))[1])
                 $Algorithms = $AlgoName + $(if ($AlgoNameDual) {"_$AlgoNameDual"})

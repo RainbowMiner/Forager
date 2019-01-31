@@ -11,7 +11,7 @@ try {
 }
 
 try {
-    $abMonitor = New-Object MSI.Afterburner.HardwareMonitor
+    $global:abMonitor = New-Object MSI.Afterburner.HardwareMonitor
 } catch {
     Write-Log $_.Exception.Message -Severity Warn
     Write-Log "Failed to create MSI Afterburner Monitor object. Falling back to standard monitoring." -Severity Warn
@@ -20,7 +20,7 @@ try {
 }
 
 try {
-    $abControl = New-Object MSI.Afterburner.ControlMemory
+    $global:abControl = New-Object MSI.Afterburner.ControlMemory
 } catch {
     Write-Log $_.Exception.Message -Severity Warn
     Write-Log "Failed to create MSI Afterburner Control object. PowerLimits will not be available" -Severity Warn
