@@ -11,6 +11,12 @@
     [String]$WorkingDirectory = ""
 )
 
+# Force Culture to en-US
+$culture = [System.Globalization.CultureInfo]::CreateSpecificCulture("en-US")
+$culture.NumberFormat.NumberDecimalSeparator = "."
+$culture.NumberFormat.NumberGroupSeparator = ","
+[System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+
 Set-Location (Split-Path $script:MyInvocation.MyCommand.Path)
 
 0 | Set-Content ".\Wrapper_$Id.txt"
@@ -34,11 +40,11 @@ do {
 
         $HashRate = 0
         if (
-            $_ -match "Speed\s([0-9.]+)\s?([kmgtp]?h/s)" -or # EnergiMiner
-            $_ -match "Accepted.*\s([0-9.]+)\s([kmgtp]?h/s)" -or # lyclMiner
+            $_ -match "Speed\s([0-9.,]+)\s?([kmgtp]?h/s)" -or # EnergiMiner
+            $_ -match "Accepted.*\s([0-9.,]+)\s([kmgtp]?h/s)" -or # lyclMiner
             $false
         ) {
-            $HashRate = [decimal]$Matches[1]
+            $HashRate = [decimal]($Matches[1] -replace ',','.')
             $Units = $Matches[2]
 
             if ($HashRate -gt 0) {
