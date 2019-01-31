@@ -194,6 +194,8 @@ Start-Autoexec
 while ($Quit -eq $false) {
 
     $global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
+    $global:PoolConfig = Get-Content .\Config\Pools.json | ConvertFrom-Json
+    $global:MinerConfig = Get-Content .\Config\Miners.json | ConvertFrom-Json
 
     Clear-Host; $RepaintScreen = $true
 
@@ -1178,7 +1180,7 @@ while ($Quit -eq $false) {
     #loop to update info and check if miner is running, Exit loop is forced inside
     while ($true) {
 
-        $ExitLoop = $false
+        $global:ExitLoop = $false
 
         if ($Config.HardwareMonitoring) {
             $Devices = Get-DevicesInformation $DeviceGroups
@@ -1329,7 +1331,7 @@ while ($Quit -eq $false) {
                 $ActiveMiners[$_.IdF].Process.HasExited -or
                 ($Devices -and $ActivityAverage -le 40 -and $TimeSinceStartInterval -gt 100 -and $ActivityDeviceCount -gt 0)
             ) {
-                $global:ExitLoop = $true
+                $ExitLoop = $true
                 $_.Status = "PendingCancellation"
                 $_.Stats.FailedTimes++
                 $_.StatsHistory.FailedTimes++
