@@ -1225,11 +1225,12 @@ function Get-BestHashRateAlgo {
             $BestHashRate = $Hrs
             $Miner = ($_.pschildname -split '_')[0]
         }
-        [PSCustomObject]@{
+        $Miner = [PSCustomObject]@{
             HashRate = $BestHashRate
             Miner    = $Miner
         }
     }
+    $Miner
 }
 
 function Set-ConsolePosition ([int]$x, [int]$y) {

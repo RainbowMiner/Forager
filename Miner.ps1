@@ -7,11 +7,10 @@ param(
     [string]$CoinsName = $null
 )
 
-# . .\Include.ps1
 Import-Module .\Include.psm1
 
-$global:Config = Get-Content .\Config\config.json | ConvertFrom-Json
-$global:Wallets = Get-Content .\Config\wallets.json | ConvertFrom-Json
+$global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
+$global:Wallets = Get-Content .\Config\Wallets.json | ConvertFrom-Json
 
 #check parameters
 
@@ -239,8 +238,8 @@ if ($MiningMode -ne "FARM MONITORING") {
                             }
                         }
                     }
-                    $Coin.LocalProfit = $CDKResponse.$Config.LocalCurrency.rate_float * $Coin.BtcProfit
-                    $Coin.LocalPrice = $CDKResponse.$Config.LocalCurrency.rate_float * $Coin.BtcPrice
+                    $Coin.LocalProfit = $CDKResponse.($Config.LocalCurrency).rate_float * $Coin.BtcProfit
+                    $Coin.LocalPrice = $CDKResponse.($Config.LocalCurrency).rate_float * $Coin.BtcPrice
                 }
             }
 
