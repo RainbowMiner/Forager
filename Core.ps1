@@ -431,8 +431,8 @@ while ($Quit -eq $false) {
                     }
                 }
 
-                if ($Config.CUDAVersion -and $Miner.CUDA) {
-                    if ([version]$Miner.CUDA -gt [version]$Config.CUDAVersion) {
+                if ($null -ne $DeviceGroup.CUDAVersion -and $null -ne $Miner.CUDA) {
+                    if ([version]$Miner.CUDA -gt [version]$DeviceGroup.CUDAVersion) {
                         Write-Log "$($MinerFile.BaseName) skipped due to CUDA version constraints" -Severity Debug
                         Continue
                     }
@@ -453,7 +453,7 @@ while ($Quit -eq $false) {
 
                         #Replace wildcards patterns
                         if ($Pool.PoolName -eq 'Nicehash') {$Nicehash = $true} else {$Nicehash = $false}
-                        if ($Nicehash) {
+                        if ($Pool.PoolName -eq 'Nicehash') {
                             $WorkerNameMain = $Config.WorkerName + '-' + $DeviceGroup.GroupName #Nicehash requires alphanumeric WorkerNames
                         } else {
                             $WorkerNameMain = $Config.WorkerName + '_' + $DeviceGroup.GroupName
@@ -881,7 +881,7 @@ while ($Quit -eq $false) {
                 $_.NeedBenchmark -or
                 $MiningMode -eq "Manual" -or
                 $Interval.Current -eq "Donate" -or
-                $_.Profits -gt $Config.('MinProfit_' + $DeviceGroup.GroupName) -or
+                $_.Profits -gt $Pools.($_.DeviceGroup.GroupName).MinProfit -or
                 -not $LocalBTCvalue -gt 0
             )
         } | Sort-Object -Descending NeedBenchmark, {$(if ($MiningMode -eq "Manual") {$_.HashRate} elseif ($LocalBTCvalue) {$_.Profits} else {$_.Revenue + $_.RevenueDual})}, {$ActiveMiners[$_.IdF].PoolPrice}, {$ActiveMiners[$_.IdF].PoolPriceDual}, PowerLimit
@@ -1518,52 +1518,6 @@ while ($Quit -eq $false) {
                 }
             ) | Group-Object GroupName | ForEach-Object {$_.Group | Sort-Object Profits, Revenue -Descending | Select-Object -First $ProfitsScreenLimit}
 
-            # $ProfitMiners = if ($ShowBestMinersOnly) {
-            #     foreach ($SubMiner in ($ActiveMiners.SubMiners | Where-Object {$ActiveMiners[$_.IdF].IsValid -and $_.Status -ne 'Failed'})) {
-            #         $Candidates = $ActiveMiners |
-            #             Where-Object {$_.IsValid -and
-            #             $_.DeviceGroup.Id -eq $ActiveMiners[$SubMiner.IdF].DeviceGroup.Id -and
-            #             $_.Algorithm -eq $ActiveMiners[$SubMiner.IdF].Algorithm -and
-            #             $_.AlgorithmDual -eq $ActiveMiners[$SubMiner.IdF].AlgorithmDual }
-            #         $ExistsBest = $Candidates.SubMiners | Where-Object {$_.Profits -gt $SubMiner.Profits}
-            #         if ($null -eq $ExistsBest -and 0 -eq $SubMiner.Profits) {
-            #             $ExistsBest = $Candidates | Where-Object {$_.HashRate -gt $SubMiner.HashRate}
-            #         }
-            #         if ($null -eq $ExistsBest -or $true -eq $SubMiner.NeedBenchmark) {
-            #             $ProfitMiner = $ActiveMiners[$SubMiner.IdF] | Select-Object * -ExcludeProperty SubMiners
-            #             $ProfitMiner | Add-Member SubMiner $SubMiner
-            #             $ProfitMiner | Add-Member GroupName $ProfitMiner.DeviceGroup.GroupName #needed for groupby
-            #             $ProfitMiner | Add-Member NeedBenchmark $ProfitMiner.SubMiner.NeedBenchmark #needed for sort
-            #             $ProfitMiner | Add-Member Profits $ProfitMiner.SubMiner.Profits #needed for sort
-            #             $ProfitMiner | Add-Member Revenue ($ProfitMiner.SubMiner.Revenue + $ProfitMiner.SubMiner.RevenueDual) #needed for sort
-            #             $ProfitMiner | Add-Member Status $ProfitMiner.SubMiner.Status #needed for sort
-            #             $ProfitMiner
-            #         }
-            #     }
-            # } else {
-            #     $ActiveMiners.SubMiners | Where-Object {$ActiveMiners[$_.IdF].IsValid} | ForEach-Object {
-            #         $ProfitMiner = $ActiveMiners[$_.IdF] | Select-Object * -ExcludeProperty SubMiners
-            #         $ProfitMiner | Add-Member SubMiner $_
-            #         $ProfitMiner | Add-Member GroupName $ProfitMiner.DeviceGroup.GroupName #needed for groupby
-            #         $ProfitMiner | Add-Member NeedBenchmark $ProfitMiner.SubMiner.NeedBenchmark #needed for sort
-            #         $ProfitMiner | Add-Member Profits $ProfitMiner.SubMiner.Profits #needed for sort
-            #         $ProfitMiner | Add-Member Revenue ($ProfitMiner.SubMiner.Revenue + $ProfitMiner.SubMiner.RevenueDual) #needed for sort
-            #         $ProfitMiner | Add-Member Status $ProfitMiner.SubMiner.Status #needed for sort
-            #         $ProfitMiner
-            #     }
-            # }
-
-            # $ProfitMiners2 = @()
-            # foreach ($DeviceGroupId in $DeviceGroups.Id) {
-            #     $inserted = 1
-            #     $ProfitMiners | Where-Object {$_.DeviceGroup.Id -eq $DeviceGroupId} | Sort-Object -Descending GroupName, NeedBenchmark, @{expression = {if ($LocalBTCvalue) {$_.Profits} else {$_.Revenue}}; Descending = $true} | ForEach-Object {
-            #         if ($inserted -le $ProfitsScreenLimit) {$ProfitMiners2 += $_; $inserted++} #this can be done with Select-Object -first but then memory leak happens, why?
-            #     }
-            # }
-            # $ProfitMiners2 = $ProfitMiners | Group-Object GroupName | ForEach-Object {$_.Group | Select-Object -First $ProfitsScreenLimit}
-
-            #Display profits information
-            # $ProfitMiners2 | Sort-Object `
             $ProfitMiners | Sort-Object `
             @{expression = {$_.GroupName -eq 'CPU'}; Ascending = $true},
             @{expression = "GroupName"; Ascending = $true},
@@ -1586,7 +1540,6 @@ while ($Quit -eq $false) {
                 @{Label = "PoolFee"; Expression = {if ($_.PoolFee -gt 0) {"{0:p2}" -f $_.PoolFee}}; Align = 'right'},
                 @{Label = "MinerFee"; Expression = {if ($_.MinerFee -gt 0) {"{0:p2}" -f $_.MinerFee}}; Align = 'right'},
                 @{Label = "Pool"; Expression = {$_.PoolName + '-' + $_.Location + $(if ($_.AlgorithmDual) {"/" + $_.PoolNameDual + "-" + $_.LocationDual})}}
-
             ) -GroupBy GroupName | Out-Host
             Remove-Variable ProfitMiners
             # Remove-Variable ProfitMiners2
