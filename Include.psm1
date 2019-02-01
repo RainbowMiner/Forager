@@ -1,4 +1,4 @@
-Add-Type -Path $PSScriptRoot\Includes\OpenCL\*.cs
+Add-Type -Path .\Includes\OpenCL\*.cs
 
 function Set-NvidiaPowerLimit ([int]$PowerLimitPercent, [string]$Devices) {
 
@@ -429,7 +429,7 @@ function Get-MiningTypes () {
             $Devs
         })
 
-    $global:Devices = Get-Content .\Config\Devices.json | ConvertFrom-Json
+    $global:Devices = Get-Configs -Type "Devices"
     $Types0 = $null
 
     if ($null -eq $Types0 -or $All) {
@@ -449,7 +449,7 @@ function Get-MiningTypes () {
 
         $SysResult = Get-CimInstance Win32_ComputerSystem
         $CpuResult = Get-CimInstance Win32_Processor
-        $Features = $(switch -regex ((& .\Includes\CHKCPU32.exe /x) -split "</\w+>") {"^\s*<_?(\w+)>(\d+).*" {@{$Matches[1] = [int]$Matches[2]}}})
+        $Features = $($feat = @{}; switch -regex ((& .\Includes\CHKCPU32.exe /x) -split "</\w+>") {"^\s*<_?(\w+)>(\d+).*" {$feat.($matches[1]) = [int]$matches[2]}}; $feat)
         $RealCores = [int[]](0..($CpuResult.NumberOfLogicalProcessors - 1))
         if ($CpuResult.NumberOfLogicalProcessors -gt $CpuResult.NumberOfCores) {
             $RealCores = $RealCores | Where-Object {-not ($_ % 2)}
@@ -497,7 +497,7 @@ function Get-MiningTypes () {
                 $_.PowerLimits = @([int[]]($_.PowerLimits -split ',') | Sort-Object -Descending -Unique)
             }
 
-            if ($_.Algorithms.Count -eq 0) {$_ | Add-Member Algorithms $Devices.($_.GroupName).Algorithms}
+            if (-not $_.Algorithms -and $Devices.($_.GroupName).Algorithms) {$_ | Add-Member Algorithms $Devices.($_.GroupName).Algorithms}
             if ($_.Algorithms.Count -eq 1) {$_.Algorithms = @($_.Algorithms -split ',') }
 
             $_
@@ -543,10 +543,10 @@ Function Read-KeyboardTimed {
     $KeyPressed = $null
 
     while ((New-TimeSpan $LoopStart (Get-Date)).Seconds -le $SecondsToWait -and $ValidKeys -notcontains $KeyPressed) {
-        if ($host.UI.RawUI.KeyAvailable) {
-            $Key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyUp")
+        if ($Host.UI.RawUI.KeyAvailable) {
+            $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
             $KeyPressed = $Key.character
-            while ($Host.UI.RawUI.KeyAvailable) {$host.UI.RawUI.FlushInputBuffer()} #keyb buffer flush
+            while ($Host.UI.RawUI.KeyAvailable) {$Host.UI.RawUI.FlushInputBuffer()} #keyb buffer flush
         }
         Start-Sleep -Milliseconds 30
     }
@@ -1184,11 +1184,14 @@ function Get-Pools {
 }
 
 function Get-Configs {
-    $global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
-    $global:PoolConfig = Get-Content .\Config\Pools.json | ConvertFrom-Json
-    $global:MinerConfig = Get-Content .\Config\Miners.json | ConvertFrom-Json
-    $global:CostsConfig = Get-Content .\Config\Powercost.json | ConvertFrom-Json
-    $global:Release = Get-Content .\Data\Release.json | ConvertFrom-Json
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [String]$Type
+    )
+    if (Test-Path ".\Config\$Type.json") {
+        Get-Content ".\Config\$Type.json" | ConvertFrom-Json
+    }
 }
 
 function Get-Updates {
@@ -1206,16 +1209,6 @@ function Get-Updates {
         Log "Failed to get $($Release.Application) updates." -Severity Warn
     }
 }
-
-# Function Get-ConfigVariable {
-#     param(
-#         [Parameter(Mandatory = $true)]
-#         [string]$VarName
-#     )
-
-#     $Result = (Get-Config).$VarName
-#     $Result # Return Value
-# }
 
 function Get-BestHashRateAlgo {
     param(
@@ -1611,9 +1604,9 @@ function Start-Autoexec {
         [Parameter(Mandatory = $false)]
         [Int]$Priority = 0
     )
-    if (-not (Test-Path ".\Config\autoexec.txt") -and (Test-Path ".\Data\autoexec.default.txt")) {Copy-Item ".\Data\autoexec.default.txt" ".\Config\autoexec.txt" -Force -ErrorAction Ignore}
+    if (-not (Test-Path ".\Config\Autoexec.txt") -and (Test-Path ".\Data\Autoexec.default.txt")) {Copy-Item ".\Data\Autoexec.default.txt" ".\Config\Autoexec.txt" -Force -ErrorAction Ignore}
     [System.Collections.ArrayList]$Script:AutoexecCommands = @()
-    foreach ($cmd in @(Get-Content ".\Config\autoexec.txt" -ErrorAction Ignore | Select-Object)) {
+    foreach ($cmd in @(Get-Content ".\Config\Autoexec.txt" -ErrorAction Ignore | Select-Object)) {
         if ($cmd -match "^[\s\t]*`"(.+?)`"(.*)$") {
             try {
                 $Job = Start-SubProcess -FilePath "$($Matches[1])" -ArgumentList "$($Matches[2].Trim())" -WorkingDirectory (Split-Path "$($Matches[1])") -Priority $Priority
@@ -1621,8 +1614,8 @@ function Start-Autoexec {
                     $Job | Add-Member FilePath "$($Matches[1])" -Force
                     $Job | Add-Member Arguments "$($Matches[2].Trim())" -Force
                     $Job | Add-Member HasOwnMinerWindow $true -Force
-                    Log "Autoexec command started: $($Matches[1]) $($Matches[2].Trim())"
-                    $Script:AutoexecCommands.Add($Job) >$null
+                    Log "Autoexec command started: $($Matches[1]) $($Matches[2].Trim())" -Severity Info
+                    $Script:AutoexecCommands.Add($Job) | Out-Null
                 }
             } catch {}
         }

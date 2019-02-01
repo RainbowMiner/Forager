@@ -9,8 +9,8 @@ param(
 
 Import-Module .\Include.psm1
 
-$global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
-$global:Wallets = Get-Content .\Config\Wallets.json | ConvertFrom-Json
+$global:Config = Get-Config -Type "Config"
+$global:Wallets = Get-Config -Type "Wallets"
 
 #check parameters
 

@@ -100,7 +100,6 @@ if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
                 Algorithm             = $Algo
                 Info                  = $Algo
                 Price                 = [decimal]$_.paying / $Divisor
-                Price24h              = [decimal]$_.paying / $Divisor
                 Protocol              = "stratum+tcp"
                 ProtocolSSL           = "ssl"
                 Host                  = $_.name + "." + $Locations.$location + ".nicehash.com"

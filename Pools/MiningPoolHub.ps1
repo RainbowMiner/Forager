@@ -103,7 +103,6 @@ if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
                 Algorithm             = $MiningPoolHub_Algorithm
                 Info                  = $MiningPoolHub_Coin
                 Price                 = [decimal]$MiningPoolHub_Price
-                Price24h              = [decimal]$MiningPoolHub_Price #MPH doesnt send this on api
                 Protocol              = "stratum+tcp"
                 Host                  = $Server
                 Port                  = $MiningPoolHub_Port

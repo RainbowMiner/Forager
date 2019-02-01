@@ -43,7 +43,7 @@ $culture.NumberFormat.NumberGroupSeparator = ","
 
 $ErrorActionPreference = "Continue"
 
-Get-Configs
+$global:Release = Get-Content .\Data\Release.json | ConvertFrom-Json
 
 Log "$($Release.Application) v$($Release.Version)"
 
@@ -86,6 +86,7 @@ $Interval = @{
     Benchmark = $null
 }
 
+$Global:Config = Get-Configs -Type 'Config'
 $Screen = $Config.StartScreen
 
 #---Parameters checking
@@ -126,9 +127,9 @@ if ($MiningMode -eq 'Manual' -and ($Algorithm -split ',').Count -ne 1) {
 
 #Parameters backup
 $ParamsBackup = @{
-    Algorithm = $Algorithm
-    PoolsName = $PoolsName
-    CoinsName = $CoinsName
+    Algorithm  = $Algorithm
+    PoolsName  = $PoolsName
+    CoinsName  = $CoinsName
     MiningMode = $MiningMode
 }
 
@@ -184,7 +185,10 @@ $Quit = $false
 
 while ($Quit -eq $false) {
 
-    Get-Configs
+    $Global:Config = Get-Configs -Type 'Config'
+    $Global:PoolConfig = Get-Configs -Type 'Pools'
+    $Global:MinerConfig = Get-Configs -Type 'Miners'
+    $Global:CostsConfig = Get-Configs -Type 'Powercost'
 
     Clear-Host
     $RepaintScreen = $true
@@ -211,8 +215,8 @@ while ($Quit -eq $false) {
     $Interval.StartTime = Get-Date
 
     #Donation
-    $global:DonationsFile = ".\Config\Donations.json"
-    $DonationStat = if (Test-Path $DonationsFile ) { Get-Content $DonationsFile | ConvertFrom-Json } else { @(0, 0) }
+    $DonationsFile = ".\Config\Donations.json"
+    $DonationStat = if (Test-Path $DonationsFile) { Get-Content $DonationsFile | ConvertFrom-Json } else { @(0, 0) }
     $MiningTime = [int]($DonationStat[0] + $Interval.LastTime.TotalMinutes)
     $DonatedTime = [int]($DonationStat[1] + $Interval.LastTime.TotalMinutes)
 
@@ -253,7 +257,7 @@ while ($Quit -eq $false) {
         $MiningMode = $ParamsBackup.MiningMode
         if (-not $Config.WorkerName) {$Config.WorkerName = (Get-Culture).TextInfo.ToTitleCase(($env:COMPUTERNAME).ToLower())}
 
-        $global:Wallets = Get-Content ".\Config\Wallets.json" | ConvertFrom-Json
+        $Global:Wallets = Get-Configs -Type 'Wallets'
     }
 
     Send-ErrorsToLog $LogFile
@@ -315,26 +319,30 @@ while ($Quit -eq $false) {
     ## Select highest paying pool for each algo and check if pool is alive.
     Log "Select top paying pool for each algo in config"
     if ($Config.PingPools) {Log "Checking pool availability"}
-    $PoolsFiltered = $Pools | Group-Object -Property Algorithm | ForEach-Object {
-        $NeedPool = $false
-        foreach ($DeviceGroup in $DeviceGroups) {
-            ## Is pool algorithm defined in config?
-            $AlgoList = $DeviceGroup.Algorithms | ForEach-Object {$_ -split '_'} | Select-Object -Unique
-            if (-not $AlgoList -or $AlgoList -contains $_.Name) {$NeedPool = $true}
-        }
-        if ($NeedPool) {
-            ## Order by price (profitability)
-            $_.Group | Sort-Object -Property `
-            @{Expression = $(if ($MiningMode -eq 'Automatic24h') {"Price24h"} else {"Price"}); Descending = $true},
-            @{Expression = "LocationPriority"; Ascending = $true} | ForEach-Object {
-                if ($NeedPool) {
-                    ## test tcp connection to pool
-                    if (-not $Config.PingPools -or (Test-TCPPort -Server $_.Host -Port $_.Port -Timeout 100)) {
-                        $NeedPool = $false
-                        $_  ## return result
-                    } else {
-                        Log "$($_.PoolName): $($_.Host):$($_.Port) is not responding!" -Severity Warn
-                    }
+
+    if ($DeviceGroups | Where-Object Algorithms -eq $null) {
+        $AlgoList = $null
+    } else {
+        $AlgoList = $DeviceGroups.Algorithms | ForEach-Object {$_ -split '_'} | Select-Object -Unique
+    }
+
+    $PoolsFiltered = $Pools |
+        Group-Object -Property Algorithm |
+        Where-Object {$null -eq $AlgoList -or $AlgoList -contains $_.Name} |
+        ForEach-Object {
+        $NeedPool = $true
+        ## Order by price (profitability)
+        $_.Group | Select-Object *, @{Name = "Estimate"; Expression = {if ($MiningMode -eq 'Automatic24h' -and $_.Price24h) {$_.Price24h} else {$_.Price}}} |
+            Sort-Object -Property `
+        @{Expression = "Estimate"; Descending = $true},
+        @{Expression = "LocationPriority"; Ascending = $true} | ForEach-Object {
+            if ($NeedPool) {
+                ## test tcp connection to pool
+                if (-not $Config.PingPools -or (Test-TCPPort -Server $_.Host -Port $_.Port -Timeout 100)) {
+                    $NeedPool = $false
+                    $_  ## return result
+                } else {
+                    Log "$($_.PoolName): $($_.Host):$($_.Port) is not responding!" -Severity Warn
                 }
             }
         }
@@ -433,22 +441,24 @@ while ($Quit -eq $false) {
                         $PoolPass = $Pool.Pass -replace '#WorkerName#', $WorkerNameMain
 
                         $Params = @{
+                            '#AlgorithmParameters#' = $Algo.Value
+                            '#Algorithm#'           = $AlgoName
+
                             '#Protocol#'            = $(if ($EnableSSL) {$Pool.ProtocolSSL} else {$Pool.Protocol})
                             '#Server#'              = $(if ($EnableSSL) {$Pool.HostSSL} else {$Pool.Host})
                             '#Port#'                = $(if ($EnableSSL) {$Pool.PortSSL} else {$Pool.Port})
                             '#Login#'               = $PoolUser
                             '#Password#'            = $PoolPass
-                            '#GPUPlatform#'         = $DeviceGroup.PlatformId
-                            '#Algorithm#'           = $AlgoName
-                            '#AlgorithmParameters#' = $Algo.Value
+                            '#EMail#'               = $Config.EMail
                             '#WorkerName#'          = $WorkerNameMain
+                            '#EthStMode#'           = $Pool.EthStMode
+
+                            '#GPUPlatform#'         = $DeviceGroup.PlatformId
                             '#Devices#'             = $DeviceGroup.Devices
                             '#DevicesClayMode#'     = $DeviceGroup.DevicesClayMode
                             '#DevicesETHMode#'      = $DeviceGroup.DevicesETHMode
                             '#DevicesNsgMode#'      = $DeviceGroup.DevicesNsgMode
-                            '#EthStMode#'           = $Pool.EthStMode
                             '#GroupName#'           = $DeviceGroup.GroupName
-                            '#EMail#'               = $Config.EMail
                         }
 
                         $Arguments = $Miner.Arguments -join " "
@@ -460,17 +470,13 @@ while ($Quit -eq $false) {
                             foreach ($P in $Params.Keys) {$ConfigFileArguments = $ConfigFileArguments -replace $P, $Params.$P}
                         }
 
-                        #select correct price by mode
-                        $Price = $Pool.$(if ($MiningMode -eq 'Automatic24h') {"Price24h"} else {"Price"})
-
                         #Search for dualmining pool
                         if ($AlgoNameDual) {
                             #search dual pool and select correct price by mode
                             $PoolDual = $Pools |
                                 Where-Object Algorithm -eq $AlgoNameDual |
-                                Sort-Object @{Expression = $(if ($MiningMode -eq 'Automatic24h') {"Price24h"} else {"Price"}); Descending = $true} |
+                                Sort-Object Estimate -Descending |
                                 Select-Object -First 1
-                            $PriceDual = [double]$PoolDual.$(if ($MiningMode -eq 'Automatic24h') {"Price24h"} else {"Price"})
 
                             #Set flag if both Miner and Pool support SSL
                             $EnableDualSSL = ($Miner.SSL -and $PoolDual.SSL)
@@ -501,7 +507,6 @@ while ($Quit -eq $false) {
                         } else {
                             $PoolDual = $null
                             $PoolUserDual = $null
-                            $PriceDual = 0
                         }
 
                         ## SubMiner are variations of miner that not need to relaunch
@@ -557,8 +562,8 @@ while ($Quit -eq $false) {
                             }
 
                             #calculates revenue
-                            $SubMinerRevenue = [double]($HashRateValue * $Price)
-                            $SubMinerRevenueDual = [double]($HashRateValueDual * $PriceDual)
+                            $SubMinerRevenue = [double]($HashRateValue * $Pool.Estimate)
+                            $SubMinerRevenueDual = [double]($HashRateValueDual * $PoolDual.Estimate)
 
                             #apply fee to revenues
                             $MinerFee = [decimal]$ExecutionContext.InvokeCommand.ExpandString($Miner.Fee)
@@ -641,8 +646,8 @@ while ($Quit -eq $false) {
                             PoolFeeDual         = [double]$PoolDual.Fee
                             PoolName            = $Pool.PoolName
                             PoolNameDual        = $PoolDual.PoolName
-                            PoolPrice           = $(if ($MiningMode -eq 'Automatic24h') {[double]$Pool.Price24h} else {[double]$Pool.Price})
-                            PoolPriceDual       = $(if ($MiningMode -eq 'Automatic24h') {[double]$PoolDual.Price24h} else {[double]$PoolDual.Price})
+                            PoolPrice           = [double]$Pool.Estimate
+                            PoolPriceDual       = [double]$PoolDual.Estimate
                             PoolRewardType      = $Pool.RewardType
                             PoolWorkers         = $Pool.PoolWorkers
                             PoolWorkersDual     = $PoolDual.PoolWorkers
@@ -1698,7 +1703,7 @@ while ($Quit -eq $false) {
             'T' {if ($Screen -eq "Profits") {$ProfitsScreenLimit = $(if ($ProfitsScreenLimit -eq $InitialProfitsScreenLimit) {1000} else {$InitialProfitsScreenLimit})}}
             'B' {if ($Screen -eq "Profits") {$ShowBestMinersOnly = -not $ShowBestMinersOnly}}
             'X' {try {Set-WindowSize 180 50} catch {}}
-            'Q' {$Quit = $true; $ExitLoop = $true}
+            'Q' {$Quit = $true; $ExitLoop = $true; Log "Exit by Q key"}
         }
 
         if ($KeyPressed) {

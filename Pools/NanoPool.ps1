@@ -74,7 +74,6 @@ if (($Querymode -eq "Core" ) -or ($Querymode -eq "Menu")) {
                 Algorithm             = $_.algo
                 Info                  = $_.Coin
                 Price                 = [decimal]$RequestP.bitcoins / $_.Divisor / 1000
-                Price24h              = [decimal]$RequestP.bitcoins / $_.Divisor / 1000
                 Protocol              = "stratum+tcp" #$_.Protocol
                 Host                  = $loc.server
                 Port                  = $_.Port
