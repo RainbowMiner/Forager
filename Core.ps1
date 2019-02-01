@@ -12,23 +12,20 @@ param(
     [String]$MiningMode = $null,
 
     [Parameter(Mandatory = $false)]
-    [array]$GroupNames = $null,
-
-    [Parameter(Mandatory = $false)]
-    [string]$PercentToSwitch = $null
+    [array]$GroupNames = $null
 )
 
-$error.clear()
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module $ScriptRoot\Include.psm1
+$Error.Clear()
+Import-Module .\Include.psm1
+
+try {Set-WindowSize 180 50} catch {}
 
 #Start log file
-
-$LogPath = "$ScriptRoot\Logs\"
+$LogPath = ".\Logs\"
 if (-not (Test-Path $LogPath)) { New-Item -Path $LogPath -ItemType directory | Out-Null }
 $LogName = $LogPath + "$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
-Start-Transcript $LogName   #for start log msg
-Stop-Transcript
+Start-Transcript $LogName  #for start log msg
+Stop-Transcript | Out-Null
 $global:LogFile = [System.IO.StreamWriter]::new( $LogName, $true )
 $LogFile.AutoFlush = $true
 
@@ -45,11 +42,10 @@ $culture.NumberFormat.NumberGroupSeparator = ","
 [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
 
 $ErrorActionPreference = "Continue"
-$global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
-$global:PoolConfig = Get-Content .\Config\Pools.json | ConvertFrom-Json
-$global:MinerConfig = Get-Content .\Config\Miners.json | ConvertFrom-Json
-$global:Release = Get-Content .\Data\Release.json | ConvertFrom-Json
-Write-Log "$($Release.Application) v$($Release.Version)"
+
+Get-Configs
+
+Log "$($Release.Application) v$($Release.Version)"
 
 $Host.UI.RawUI.WindowTitle = "$($Release.Application) v$($Release.Version)"
 
@@ -62,10 +58,8 @@ if ($env:GPU_MAX_ALLOC_PERCENT -ne 100) { setx GPU_MAX_ALLOC_PERCENT 100 }      
 if ($env:GPU_SINGLE_ALLOC_PERCENT -ne 100) { setx GPU_SINGLE_ALLOC_PERCENT 100 } #For AMD
 if ($env:GPU_MAX_WORKGROUP_SIZE -ne 256) { setx GPU_MAX_WORKGROUP_SIZE 256 }     #For AMD
 
-$progressPreference = 'silentlyContinue' #No progress message on web requests
+$progressPreference = 'SilentlyContinue' #No progress message on web requests
 #$progressPreference = 'Stop'
-
-Set-Location $ScriptRoot
 
 #Set process priority to BelowNormal to avoid hash rate drops on systems with weak CPUs
 (Get-Process -Id $PID).PriorityClass = "BelowNormal"
@@ -97,16 +91,15 @@ $Screen = $Config.StartScreen
 #---Parameters checking
 
 if (@('Manual', 'Automatic', 'Automatic24h') -notcontains $MiningMode) {
-    Write-Log "Parameter MiningMode not valid, valid options: Manual, Automatic, Automatic24h" -Severity Warn
+    Log "Parameter MiningMode not valid, valid options: Manual, Automatic, Automatic24h" -Severity Warn
     Exit
 }
 $Params = @{
-    Querymode       = "info"
+    Querymode       = "Info"
     PoolsFilterList = $PoolsName
     CoinFilterList  = $CoinsName
     Location        = $Config.Location
     AlgoFilterList  = $Algorithm
-
 }
 $PoolsChecking = Get-Pools @Params
 
@@ -117,28 +110,27 @@ $PoolsErrors = switch ($MiningMode) {
 }
 
 $PoolsErrors | ForEach-Object {
-    Write-Log "Selected MiningMode is not valid for pool $($_.Name)" -Severity Warn
+    Log "$MiningMode MiningMode is not valid for pool $($_.Name)" -Severity Warn
     Exit
 }
 
 if ($MiningMode -eq 'Manual' -and ($CoinsName -split ',').Count -ne 1) {
-    Write-Log "On manual mode one coin must be selected" -Severity Warn
+    Log "On manual mode one coin must be selected" -Severity Warn
     Exit
 }
 
 if ($MiningMode -eq 'Manual' -and ($Algorithm -split ',').Count -ne 1) {
-    Write-Log "On manual mode one algorithm must be selected" -Severity Warn
+    Log "On manual mode one algorithm must be selected" -Severity Warn
     Exit
 }
 
-#parameters backup
-
-$ParamAlgorithmBCK = $Algorithm
-$ParamPoolsNameBCK = $PoolsName
-$ParamCoinsNameBCK = $CoinsName
-$ParamMiningModeBCK = $MiningMode
-
-try {Set-WindowSize 180 50} catch {}
+#Parameters backup
+$ParamsBackup = @{
+    Algorithm = $Algorithm
+    PoolsName = $PoolsName
+    CoinsName = $CoinsName
+    MiningMode = $MiningMode
+}
 
 $Interval.StartTime = Get-Date #first initialization, must be outside loop
 
@@ -150,18 +142,17 @@ $Msg = @("Starting Parameters: "
     "CoinsName: " + [string]($CoinsName -join ",")
     "MiningMode: " + $MiningMode
     "GroupNames: " + [string]($GroupNames -join ",")
-    "PercentToSwitch: " + $PercentToSwitch
 ) -join ' //'
 
-Write-Log $Msg -Severity Debug
+Log $Msg -Severity Debug
 
 #Enable api
 if ($Config.ApiPort -gt 0) {
 
-    Write-Log "Starting API on port $($Config.ApiPort)" -Severity Debug
+    Log "Starting API on port $($Config.ApiPort)" -Severity Debug
 
-    $ApiSharedFile = "$ScriptRoot\ApiShared" + [string](Get-Random -minimum 0 -maximum 99999999) + ".tmp"
-    $Command = "-WindowStyle minimized  -noExit -executionpolicy bypass -file $ScriptRoot\Includes\ApiListener.ps1 -Port $($Config.ApiPort) -SharedFile $ApiSharedFile "
+    $ApiSharedFile = ".\ApiShared" + [string](Get-Random -minimum 0 -maximum 99999999) + ".tmp"
+    $Command = "-WindowStyle minimized  -noExit -executionpolicy bypass -file .\Includes\ApiListener.ps1 -Port $($Config.ApiPort) -SharedFile $ApiSharedFile "
     $APIprocess = Start-Process -FilePath "powershell.exe" -ArgumentList $Command -Verb RunAs -PassThru -WindowStyle Minimized
 
     #open firewall port
@@ -172,14 +163,14 @@ if ($Config.ApiPort -gt 0) {
     Start-Process -FilePath "powershell.exe" -ArgumentList $Command -Verb RunAs -WindowStyle Minimized
 }
 
-$Quit = $false
+Start-Autoexec
 
 # Initialize MSI Afterburner
 if ($Config.Afterburner) {
-    . .\Includes\afterburner.ps1
+    . .\Includes\Afterburner.ps1
 }
 
-Start-Autoexec
+$Quit = $false
 
 #-----------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
@@ -193,33 +184,19 @@ Start-Autoexec
 
 while ($Quit -eq $false) {
 
-    $global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
-    $global:PoolConfig = Get-Content .\Config\Pools.json | ConvertFrom-Json
-    $global:MinerConfig = Get-Content .\Config\Miners.json | ConvertFrom-Json
+    Get-Configs
 
-    Clear-Host; $RepaintScreen = $true
+    Clear-Host
+    $RepaintScreen = $true
 
-    # Check for updates
-    try {
-        $Request = Invoke-APIRequest -Url "https://api.github.com/repos/yuzi-co/$($Release.Application)/releases/latest" -Age 60
-        $RemoteVersion = ($Request.tag_name -replace '[^\d.]')
-        $Uri = $Request.assets | Where-Object Name -eq "$($Release.Application)-v$RemoteVersion.7z" | Select-Object -ExpandProperty browser_download_url
-
-        if ([version]$RemoteVersion -gt [version]$Release.Version) {
-            Write-Log "$($Release.Application) v$($Release.Version) is out of date. There is an updated version available at $Uri" -Severity Warn
-        } elseif ([version]$RemoteVersion -lt [version]$Release.Version) {
-            Write-Log "$($Release.Application) v$($Release.Version) is pre-release version. Use at your own risk" -Severity Warn
-        }
-    } catch {
-        Write-Log "Failed to get $($Release.Application) updates." -Severity Warn
-    }
+    Get-Updates
 
     #get mining types
-    $DeviceGroups = Get-MiningTypes -filter $GroupNames
+    $DeviceGroups = Get-MiningTypes -Filter $GroupNames
 
     if ($null -eq $Interval.Last) {
-        Write-Log (Get-DevicesInformation $DeviceGroups | ConvertTo-Json) -Severity Debug
-        Write-Log ($DeviceGroups | ConvertTo-Json) -Severity Debug
+        Log (Get-DevicesInformation $DeviceGroups | ConvertTo-Json) -Severity Debug
+        Log ($DeviceGroups | ConvertTo-Json) -Severity Debug
         Test-DeviceGroupsConfig $DeviceGroups
     }
 
@@ -227,7 +204,7 @@ while ($Quit -eq $false) {
     if ($NumberTypesGroups -gt 0) {$InitialProfitsScreenLimit = [Math]::Floor(30 / $NumberTypesGroups) - 5} #screen adjust to number of groups
     if ($null -eq $Interval.Last) {$ProfitsScreenLimit = $InitialProfitsScreenLimit}
 
-    Write-Log "New interval starting..."
+    Log "New interval starting..."
 
     $Interval.Last = $Interval.Current
     $Interval.LastTime = (Get-Date) - $Interval.StartTime
@@ -264,16 +241,16 @@ while ($Quit -eq $false) {
 
         @($DonationStat[0], $DonatedTime) | ConvertTo-Json | Set-Content $DonationsFile
 
-        Write-Log "Next interval you will be donating for $DonateInterval seconds, thanks for your support"
+        Log "Next interval you will be donating for $DonateInterval seconds, thanks for your support"
     } else {
         #NOT donation interval
         $Interval.Current = "Mining"
         @($MiningTime, 0) | ConvertTo-Json | Set-Content $DonationsFile
 
-        $Algorithm = $ParamAlgorithmBCK
-        $PoolsName = $ParamPoolsNameBCK
-        $CoinsName = $ParamCoinsNameBCK
-        $MiningMode = $ParamMiningModeBCK
+        $Algorithm = $ParamsBackup.Algorithm
+        $PoolsName = $ParamsBackup.PoolsName
+        $CoinsName = $ParamsBackup.CoinsName
+        $MiningMode = $ParamsBackup.MiningMode
         if (-not $Config.WorkerName) {$Config.WorkerName = (Get-Culture).TextInfo.ToTitleCase(($env:COMPUTERNAME).ToLower())}
 
         $global:Wallets = Get-Content ".\Config\Wallets.json" | ConvertFrom-Json
@@ -282,7 +259,6 @@ while ($Quit -eq $false) {
     Send-ErrorsToLog $LogFile
 
     #get actual hour electricity cost
-    $global:CostsConfig = Get-Content .\Config\Powercost.json | ConvertFrom-Json
     $CostsConfig | ForEach-Object {
         if ((
                 $_.HourStart -lt $_.HourEnd -and
@@ -300,7 +276,7 @@ while ($Quit -eq $false) {
         }
     }
 
-    Write-Log "Loading Pools Information..."
+    Log "Loading Pools Information..."
 
     #Load information about the Pools, only must read parameter passed files (not all as mph do), level is Pool-Algo-Coin
     do {
@@ -313,15 +289,15 @@ while ($Quit -eq $false) {
         }
         $AllPools = Get-Pools @Params
         if ($AllPools.Count -eq 0) {
-            Write-Log "NO POOLS! Retry in 30 seconds" -Severity Warn
-            Write-Log "If you are mining on anonymous pool without exchage, like YIIMP, NANOPOOL or similar, you must set wallet for at least one pool coin in config.ini" -Severity Warn
+            Log "NO POOLS! Retry in 30 seconds" -Severity Warn
+            Log "If you are mining on anonymous pool without exchage, like YIIMP, NANOPOOL or similar, you must set wallet for at least one pool coin in config.ini" -Severity Warn
             Start-Sleep 30
         }
     } while ($AllPools.Count -eq 0)
 
-    $AllPools | Select-Object name -unique | ForEach-Object {Write-Log "Pool $($_.Name) was responsive..."}
+    $AllPools | Select-Object Name -Unique | ForEach-Object {Log "Pool $($_.Name) was responsive..."}
 
-    Write-Log "Detected $($AllPools.Count) pools..."
+    Log "Detected $($AllPools.Count) pools..."
 
     #Filter by minworkers variable (only if there is any pool greater than minimum)
     $Pools = ($AllPools | Where-Object {
@@ -330,15 +306,15 @@ while ($Quit -eq $false) {
         }
     )
     if ($Pools.Count -ge 1) {
-        Write-Log "$($Pools.Count) pools left after min workers filter..."
+        Log "$($Pools.Count) pools left after min workers filter..."
     } else {
         $Pools = $AllPools
-        Write-Log "No pools with workers greater than minimum config, filter ignored..."
+        Log "No pools with workers greater than minimum config, filter ignored..."
     }
 
     ## Select highest paying pool for each algo and check if pool is alive.
-    Write-Log "Select top paying pool for each algo in config"
-    if ($Config.PingPools) {Write-Log "Checking pool availability"}
+    Log "Select top paying pool for each algo in config"
+    if ($Config.PingPools) {Log "Checking pool availability"}
     $PoolsFiltered = $Pools | Group-Object -Property Algorithm | ForEach-Object {
         $NeedPool = $false
         foreach ($DeviceGroup in $DeviceGroups) {
@@ -357,7 +333,7 @@ while ($Quit -eq $false) {
                         $NeedPool = $false
                         $_  ## return result
                     } else {
-                        Write-Log "$($_.PoolName): $($_.Host):$($_.Port) is not responding!" -Severity Warn
+                        Log "$($_.PoolName): $($_.Host):$($_.Port) is not responding!" -Severity Warn
                     }
                 }
             }
@@ -365,7 +341,7 @@ while ($Quit -eq $false) {
     }
     $Pools = $PoolsFiltered
 
-    Write-Log "$($Pools.Count) pools left"
+    Log "$($Pools.Count) pools left"
     Remove-Variable PoolsFiltered
 
     #Call api to local currency conversion
@@ -373,42 +349,37 @@ while ($Quit -eq $false) {
         $CDKResponse = Invoke-APIRequest -Url "https://api.coindesk.com/v1/bpi/currentprice/$($Config.LocalCurrency).json" -MaxAge 60 |
             Select-Object -ExpandProperty BPI
         $LocalBTCvalue = $CDKResponse.$($Config.LocalCurrency).rate_float
-        Write-Log "CoinDesk API was responsive..."
+        Log "CoinDesk API was responsive..."
     } catch {
-        Write-Log "Coindesk API not responding, no local coin conversion..." -Severity Warn
+        Log "Coindesk API not responding, no local coin conversion..." -Severity Warn
     }
 
     #Load information about the Miner asociated to each Coin-Algo-Miner
     $Miners = @()
 
-    $MinersFolderContent = (Get-ChildItem "$ScriptRoot\Miners\*" -Include "*.json")
+    $MinersFolderContent = (Get-ChildItem ".\Miners\*" -Include "*.json")
 
-    Write-Log "Files in miner folder: $($MinersFolderContent.count)" -Severity Debug
-    Write-Log "Number of device groups: $($DeviceGroups.count)" -Severity Debug
+    Log "Files in miner folder: $($MinersFolderContent.count)" -Severity Debug
+    Log "Number of device groups: $($DeviceGroups.count)" -Severity Debug
 
     foreach ($MinerFile in $MinersFolderContent) {
         try {
             $Miner = $MinerFile | Get-Content | ConvertFrom-Json
         } catch {
-            Write-Log "Badly formed JSON: $MinerFile" -Severity Warn
-            Exit
+            Log "Badly formed JSON: $MinerFile" -Severity Warn
+            Start-Sleep -Seconds 10
+            Continue
         }
 
-        foreach ($DeviceGroup in $DeviceGroups) {
-            #generate a line for each device group that has algorithm as valid
-            if ($Miner.Type -ne $DeviceGroup.Type) {
-                Write-Log "$($MinerFile.BaseName) is NOT valid for $($DeviceGroup.GroupName). Skipping" -Severity Debug
-                Continue
-            } elseif (
+        foreach ($DeviceGroup in ($DeviceGroups | Where-Object Type -eq $Miner.Type)) {
+            if (
                 $Devices.($DeviceGroup.GroupName).ExcludeMiners -and
                 $Devices.($DeviceGroup.GroupName).ExcludeMiners -split ',' | Where-Object {$MinerFile.BaseName -like $_}
             ) {
-                Write-Log "$($MinerFile.BaseName) is Excluded for $($DeviceGroup.GroupName). Skipping" -Severity Debug
+                Log "$($MinerFile.BaseName) is Excluded for $($DeviceGroup.GroupName). Skipping" -Severity Debug
                 Continue
-            } else {
-                #check group and miner types are the same
-                Write-Log "$($MinerFile.BaseName) is valid for $($DeviceGroup.GroupName)" -Severity Debug
             }
+            Log "$($MinerFile.BaseName) is valid for $($DeviceGroup.GroupName)" -Severity Debug
 
             foreach ($Algo in $Miner.Algorithms.PSObject.Properties) {
 
@@ -426,14 +397,14 @@ while ($Quit -eq $false) {
                         if ($DeviceGroup.MemoryGB -lt [int]$Matches.mem) {$SkipLabel = $true}
                     }
                     if ($SkipLabel) {
-                        Write-Log "$($MinerFile.BaseName)/$Algorithms/$AlgoLabel skipped due to constraints" -Severity Debug
+                        Log "$($MinerFile.BaseName)/$Algorithms/$AlgoLabel skipped due to constraints" -Severity Debug
                         Continue
                     }
                 }
 
                 if ($null -ne $DeviceGroup.CUDAVersion -and $null -ne $Miner.CUDA) {
                     if ([version]$Miner.CUDA -gt [version]$DeviceGroup.CUDAVersion) {
-                        Write-Log "$($MinerFile.BaseName) skipped due to CUDA version constraints" -Severity Debug
+                        Log "$($MinerFile.BaseName) skipped due to CUDA version constraints" -Severity Debug
                         Continue
                     }
                 }
@@ -699,7 +670,7 @@ while ($Quit -eq $false) {
         } # end if types
     } #end foreach miner
 
-    Write-Log "Miners/Pools combinations detected: $($Miners.Count)"
+    Log "Miners/Pools combinations detected: $($Miners.Count)"
 
     #Launch download of miners
     $Miners |
@@ -727,7 +698,7 @@ while ($Quit -eq $false) {
     #Paint no miners message
     $Miners = $Miners | Where-Object {Test-Path $_.Path}
     if ($Miners.Count -eq 0) {
-        Write-Log "NO MINERS! Retry in 30 seconds..." -Severity Warn
+        Log "NO MINERS! Retry in 30 seconds..." -Severity Warn
         Start-Sleep -Seconds 30
         Continue
     }
@@ -747,8 +718,7 @@ while ($Quit -eq $false) {
             $_.AlgoLabel -eq $ActiveMiner.AlgoLabel }
 
         if (($Miner | Measure-Object).count -gt 1) {
-            Clear-Host
-            Write-Log "DUPLICATE MINER $($Miner.Algorithms) in $($Miner.Name)" -Severity Warn
+            Log "DUPLICATE MINER $($Miner.Algorithms) in $($Miner.Name)" -Severity Warn
             Exit
         }
 
@@ -850,12 +820,12 @@ while ($Quit -eq $false) {
     $ActiveMiners.SubMiners | Where-Object {$_.Status -eq 'Failed' -and $_.Stats.LastTimeActive -lt (Get-Date).AddHours(-4)} | ForEach-Object {
         $_.Status = 'Idle'
         $_.Stats.FailedTimes = 0
-        Write-Log "Reset failed miner status: $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithms)"
+        Log "Reset failed miner status: $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithms)"
     }
 
-    Write-Log "Active Miners-pools: $($ActiveMiners.Count)"
+    Log "Active Miners-pools: $($ActiveMiners.Count)"
     Send-ErrorsToLog $LogFile
-    Write-Log "Pending benchmarks: $(($ActiveMiners | Where-Object IsValid | Select-Object -ExpandProperty SubMiners | Where-Object NeedBenchmark | Select-Object -ExpandProperty Id).Count)..."
+    Log "Pending benchmarks: $(($ActiveMiners | Where-Object IsValid | Select-Object -ExpandProperty SubMiners | Where-Object NeedBenchmark | Select-Object -ExpandProperty Id).Count)..."
 
     $Msg = ($ActiveMiners.SubMiners | ForEach-Object {
             "$($_.IdF)-$($_.Id), " +
@@ -868,7 +838,7 @@ while ($Quit -eq $false) {
             "$($ActiveMiners[$_.IdF].Coin), " +
             "$($ActiveMiners[$_.IdF].Process.Id)"
         }) | ConvertTo-Json
-    Write-Log $Msg -Severity Debug
+    Log $Msg -Severity Debug
 
     $BestLastMiners = $ActiveMiners.SubMiners | Where-Object {@("Running", "PendingCancellation") -contains $_.Status}
 
@@ -904,10 +874,10 @@ while ($Quit -eq $false) {
 
         if ($AltBestNowMiners.NeedBenchmark -contains $true -or ($AltBestNowProfits -gt $BestNowProfits -and $BestNowMiners.NeedBenchmark -notcontains $true)) {
             $BestNowMiners = $AltBestNowMiners
-            Write-Log "Skipping miner that prevents CPU mining" -Severity Warn
+            Log "Skipping miner that prevents CPU mining" -Severity Warn
         } else {
             $BestNowMiners = $BestNowMiners | Where-Object {$ActiveMiners[$_.IdF].DeviceGroup.Type -ne 'CPU'}
-            Write-Log "Miner prevents CPU mining. Will not mine on CPU" -Severity Warn
+            Log "Miner prevents CPU mining. Will not mine on CPU" -Severity Warn
         }
     }
 
@@ -935,7 +905,7 @@ while ($Quit -eq $false) {
                 $ActiveMiners[$BestLast.IdF].PoolWorkers -le $Config.MinWorkers
             ) {
                 $BestLast.Status = 'PendingCancellation'
-                Write-Log "Cancelling miner due to low worker count"
+                Log "Cancelling miner due to low worker count"
             }
         } else {
             $ProfitLast = 0
@@ -970,7 +940,7 @@ while ($Quit -eq $false) {
         if ($BestLast.Status -eq 'PendingCancellation') {
             if (($ActiveMiners[$BestLast.IdF].SubMiners.Stats.FailedTimes | Measure-Object -sum).sum -ge 3) {
                 $ActiveMiners[$BestLast.IdF].SubMiners | ForEach-Object {$_.Status = 'Failed'}
-                Write-Log "Detected more than 3 fails, cancelling combination for $BestNowLogMsg" -Severity Warn
+                Log "Detected more than 3 fails, cancelling combination for $BestNowLogMsg" -Severity Warn
             }
         }
 
@@ -995,9 +965,9 @@ while ($Quit -eq $false) {
                 $ActiveMiners[$BestNow.IdF].SubMiners[$BestNow.Id].StatsHistory.BestTimes++
             }
 
-            Write-Log "$BestNowLogMsg is the best combination for device group, last was $BestLastLogMsg"
+            Log "$BestNowLogMsg is the best combination for device group, last was $BestLastLogMsg"
         } else {
-            Write-Log "No valid candidate for device group $($DeviceGroup.GroupName)" -Severity Warn
+            Log "No valid candidate for device group $($DeviceGroup.GroupName)" -Severity Warn
             # Continue
         }
 
@@ -1028,7 +998,7 @@ while ($Quit -eq $false) {
                         $ActiveMiners[$BestLast.IdF].Process -and
                         $ActiveMiners[$BestLast.IdF].Process.Id -gt 0
                     ) {
-                        Write-Log "Killing in $($Config.DelayCloseMiners) sec. $BestLastLogMsg with system process id $($ActiveMiners[$BestLast.IdF].Process.Id)"
+                        Log "Killing in $($Config.DelayCloseMiners) sec. $BestLastLogMsg with system process id $($ActiveMiners[$BestLast.IdF].Process.Id)"
                         if (
                             $Config.DelayCloseMiners -eq 0 -or
                             $BestNow.NeedBenchmark -or
@@ -1116,14 +1086,14 @@ while ($Quit -eq $false) {
                     $ActiveMiners[$BestNow.IdF].SubMiners[$BestNow.Id].Stats.StatsTime = Get-Date
                     $ActiveMiners[$BestNow.IdF].SubMiners[$BestNow.Id].StatsHistory.LastTimeActive = Get-Date
                     $ActiveMiners[$BestNow.IdF].SubMiners[$BestNow.Id].TimeSinceStartInterval = [TimeSpan]0
-                    Write-Log "Started System process Id $($ActiveMiners[$BestNow.IdF].Process.Id) for $BestNowLogMsg --> $($ActiveMiners[$BestNow.IdF].Path) $($ActiveMiners[$BestNow.IdF].Arguments)" -Severity Debug
+                    Log "Started System process Id $($ActiveMiners[$BestNow.IdF].Process.Id) for $BestNowLogMsg --> $($ActiveMiners[$BestNow.IdF].Path) $($ActiveMiners[$BestNow.IdF].Arguments)" -Severity Debug
                 }
             } else {
                 #Must mantain last miner by switch
                 $ActiveMiners[$BestLast.IdF].SubMiners[$BestLast.Id].Best = $true
                 if ($ProfitLast -lt $ProfitNow) {
                     $ActiveMiners[$BestLast.IdF].SubMiners[$BestLast.Id].BestBySwitch = "*"
-                    Write-Log "$BestNowLogMsg Continue mining due to PercentToSwitch value"
+                    Log "$BestNowLogMsg Continue mining due to PercentToSwitch value"
                 }
             }
         }
@@ -1148,12 +1118,12 @@ while ($Quit -eq $false) {
     else {
         $Interval.Duration = $ActiveMiners.SubMiners | Where-Object Status -eq 'Running' | Select-Object -ExpandProperty IdF | ForEach-Object {
             $PoolInterval = $Config.("INTERVAL_" + $ActiveMiners[$_].PoolRewardType)
-            Write-Log "Interval for pool $($ActiveMiners[$_].PoolName) is $PoolInterval" -Severity Debug
+            Log "Interval for pool $($ActiveMiners[$_].PoolName) is $PoolInterval" -Severity Debug
             $PoolInterval  # Return value
         } | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
     }
     if (-not $Interval.Duration) {$Interval.Duration = 60} # when no best miners available retry every minute
-    Write-Log "Next interval: $($Interval.Duration)"
+    Log "Next interval: $($Interval.Duration)"
 
     $FirstLoopExecution = $true
     $LoopStartTime = Get-Date
@@ -1162,7 +1132,8 @@ while ($Quit -eq $false) {
     $SwitchLoop = 0
     $ActivityAverages = @()
 
-    Clear-Host; $RepaintScreen = $true
+    Clear-Host
+    $RepaintScreen = $true
 
     while ($Host.UI.RawUI.KeyAvailable) {$Host.UI.RawUI.FlushInputBuffer()} #keyb buffer flush
 
@@ -1301,7 +1272,7 @@ while ($Quit -eq $false) {
                     $ActivityAverages = $ActivityAverages[($ActivityAverages.Count - 20)..($ActivityAverages.Count - 1)]
                     $ActivityAverage = ($ActivityAverages | Where-Object DeviceGroup -eq $ActiveMiners[$_.IdF].DeviceGroup.GroupName | Measure-Object -property Average -maximum).maximum
                     $ActivityDeviceCount = ($ActivityAverages | Where-Object DeviceGroup -eq $ActiveMiners[$_.IdF].DeviceGroup.GroupName | Measure-Object -property NumberOfDevices -maximum).maximum
-                    # Write-Log "Last 20 reads maximum Device activity is $ActivityAverage for DeviceGroup $($ActiveMiners[$_.IdF].DeviceGroup.GroupName)" -Severity Debug
+                    # Log "Last 20 reads maximum Device activity is $ActivityAverage for DeviceGroup $($ActiveMiners[$_.IdF].DeviceGroup.GroupName)" -Severity Debug
                 } else { $ActivityAverage = 100 } #only want watchdog works with at least 20 reads
             }
             ## HashRate Watchdog
@@ -1321,7 +1292,7 @@ while ($Quit -eq $false) {
                     # Remove failing SpeedReads from statistics to prevent average skewing
                     $_.SpeedReads = $_.SpeedReads[0..($_.SpeedReads.count - 10)]
                     $WatchdogHashRateFail = $true
-                    Write-Log "Detected low hashrate $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithm) : $(ConvertTo-Hash $AvgCurr) vs $(ConvertTo-Hash $_.HashRate)" -Severity Warn
+                    Log "Detected low hashrate $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithm) : $(ConvertTo-Hash $AvgCurr) vs $(ConvertTo-Hash $_.HashRate)" -Severity Warn
                 }
             }
 
@@ -1335,14 +1306,14 @@ while ($Quit -eq $false) {
                 $_.Status = "PendingCancellation"
                 $_.Stats.FailedTimes++
                 $_.StatsHistory.FailedTimes++
-                Write-Log "Detected miner error $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithm) (id $($_.IdF)-$($_.Id)) --> $($ActiveMiners[$_.IdF].Path) $($ActiveMiners[$_.IdF].Arguments)" -Severity Warn
+                Log "Detected miner error $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithm) (id $($_.IdF)-$($_.Id)) --> $($ActiveMiners[$_.IdF].Path) $($ActiveMiners[$_.IdF].Arguments)" -Severity Warn
             }
         } #End For each
 
         #############################################################
 
         if ($Interval.Benchmark -and ($ActiveMiners | Where-Object IsValid | Select-Object -ExpandProperty SubMiners | Where-Object {$_.NeedBenchmark -and $_.Best}).Count -eq 0) {
-            Write-Log "Benchmark completed early"
+            Log "Benchmark completed early"
             $ExitLoop = $true
         }
 
@@ -1364,7 +1335,7 @@ while ($Quit -eq $false) {
         if ($CurrentInterval -eq "Donate") {" THIS INTERVAL YOU ARE DONATING, YOU CAN INCREASE OR DECREASE DONATION ON config.ini, THANK YOU FOR YOUR SUPPORT !!!!"}
 
         #write speed
-        Write-Log ($ActiveMiners | Where-Object Best | Select-Object id, process.Id, GroupName, name, poolname, Algorithm, AlgorithmDual, SpeedLive, ProfitsLive, location, port, arguments | ConvertTo-Json) -Severity Debug
+        Log ($ActiveMiners | Where-Object Best | Select-Object id, process.Id, GroupName, name, poolname, Algorithm, AlgorithmDual, SpeedLive, ProfitsLive, location, port, arguments | ConvertTo-Json) -Severity Debug
 
         #get pool reported speed (1 or each 10 executions to not saturate pool)
         if ($SwitchLoop -eq 0) {
@@ -1542,7 +1513,6 @@ while ($Quit -eq $false) {
                 @{Label = "Pool"; Expression = {$_.PoolName + '-' + $_.Location + $(if ($_.AlgorithmDual) {"/" + $_.PoolNameDual + "-" + $_.LocationDual})}}
             ) -GroupBy GroupName | Out-Host
             Remove-Variable ProfitMiners
-            # Remove-Variable ProfitMiners2
 
             $RepaintScreen = $false
         }
@@ -1566,35 +1536,35 @@ while ($Quit -eq $false) {
 
                 $WalletsUpdate = Get-Date
 
-                $WalletsToCheck = @()
-
-                $WalletsToCheck += $AllPools |
-                    Where-Object {$_.WalletMode -eq 'Wallet' -and $_.User} |
-                    Select-Object PoolName, User, WalletMode, WalletSymbol -unique |
-                    ForEach-Object {
-                    [PSCustomObject]@{
-                        PoolName   = $_.PoolName
-                        WalletMode = $_.WalletMode
-                        User       = $_.User
-                        Coin       = $null
-                        Algorithm  = $null
-                        Symbol     = $_.WalletSymbol
+                $WalletsToCheck = @(
+                    $AllPools |
+                        Where-Object {$_.WalletMode -eq 'Wallet' -and $_.User} |
+                        Select-Object PoolName, User, WalletMode, WalletSymbol -Unique |
+                        ForEach-Object {
+                        [PSCustomObject]@{
+                            PoolName   = $_.PoolName
+                            WalletMode = $_.WalletMode
+                            User       = $_.User
+                            Coin       = $null
+                            Algorithm  = $null
+                            Symbol     = $_.WalletSymbol
+                        }
                     }
-                }
 
-                $WalletsToCheck += $AllPools |
-                    Where-Object {$_.WalletMode -eq 'ApiKey' -and $PoolConfig.($_.PoolName).ApiKey} |
-                    Select-Object PoolName, Algorithm, WalletMode, WalletSymbol, @{Name = "ApiKey"; Expression = {$PoolConfig.($_.PoolName).ApiKey}} -unique |
-                    ForEach-Object {
-                    [PSCustomObject]@{
-                        PoolName   = $_.PoolName
-                        WalletMode = $_.WalletMode
-                        User       = $null
-                        Algorithm  = $_.Algorithm
-                        Symbol     = $_.WalletSymbol
-                        ApiKey     = $_.ApiKey
+                    $AllPools |
+                        Where-Object {$_.WalletMode -eq 'ApiKey' -and $PoolConfig.($_.PoolName).ApiKey} |
+                        Select-Object PoolName, Algorithm, WalletMode, WalletSymbol, @{Name = "ApiKey"; Expression = {$PoolConfig.($_.PoolName).ApiKey}} -Unique |
+                        ForEach-Object {
+                        [PSCustomObject]@{
+                            PoolName   = $_.PoolName
+                            WalletMode = $_.WalletMode
+                            User       = $null
+                            Algorithm  = $_.Algorithm
+                            Symbol     = $_.WalletSymbol
+                            ApiKey     = $_.ApiKey
+                        }
                     }
-                }
+                )
 
                 $WalletStatus = $WalletsToCheck | ForEach-Object {
 
@@ -1602,8 +1572,8 @@ while ($Quit -eq $false) {
                     " " * 70 | Out-Host
                     Set-ConsolePosition 0 $YToWriteMessages
 
-                    if ($_.WalletMode -eq "Wallet") {Write-Log "Checking $($_.PoolName) - $($_.Symbol)"}
-                    else {Write-Log "Checking $($_.PoolName) - $($_.Symbol) ($($_.Algorithm))"}
+                    if ($_.WalletMode -eq "Wallet") {Log "Checking $($_.PoolName) - $($_.Symbol)"}
+                    else {Log "Checking $($_.PoolName) - $($_.Symbol) ($($_.Algorithm))"}
 
                     $Ws = Get-Pools -Querymode $_.WalletMode -PoolsFilterList $_.PoolName -Info ($_)
 
@@ -1646,15 +1616,12 @@ while ($Quit -eq $false) {
 
                 $WalletStatus | Where-Object Balance |
                     Sort-Object @{expression = "PoolName"; Ascending = $true}, @{expression = "balance"; Descending = $true} |
-                    Format-Table -Wrap -groupby PoolName (
+                    Format-Table -Wrap -GroupBy PoolName (
                     @{Label = "Coin"; Expression = {if ($_.WalletSymbol -ne $null) {$_.WalletSymbol} else {$_.wallet}}},
                     @{Label = "Balance"; Expression = {$_.Balance.tostring("n5")}; Align = 'right'},
-                    @{Label = "IncFromStart"; Expression = {($_.Balance - $_.BalanceAtStart).tostring("n5")}; Align = 'right'}
+                    @{Label = "Session"; Expression = {($_.Balance - $_.BalanceAtStart).tostring("n5")}; Align = 'right'}
                 ) | Out-Host
 
-                $Pools | Where-Object WalletMode -notin @('ApiKey', 'Wallet') | Select-Object PoolName -Unique | ForEach-Object {
-                    "NO API FOR POOL " + $_.PoolName + " - NO WALLETS CHECK" | Out-Host
-                }
                 $RepaintScreen = $false
             }
         }
@@ -1677,6 +1644,7 @@ while ($Quit -eq $false) {
                 @{Label = "LastTimeActive"; Expression = {$($_.Stats.LastTimeActive).tostring("dd/MM/yy H:mm")}},
                 @{Label = "Command"; Expression = {"$($ActiveMiners[$_.IdF].Path.TrimStart((Convert-Path ".\Bin\"))) $($ActiveMiners[$_.IdF].Arguments)"}}
             ) | Out-Host
+
             $RepaintScreen = $false
         }
 
@@ -1717,36 +1685,39 @@ while ($Quit -eq $false) {
 
         #Loop for reading key and wait
 
-        $KeyPressed = Read-KeyboardTimed 3 ('P', 'C', 'H', 'E', 'W', 'U', 'T', 'B', 'S', 'X', 'Q')
+        $KeyPressed = Read-KeyboardTimed -SecondsToWait 3 -ValidKeys @('P', 'C', 'H', 'E', 'W', 'U', 'T', 'B', 'S', 'X', 'Q')
 
         switch ($KeyPressed) {
             'P' {$Screen = 'Profits'}
             'C' {$Screen = 'Current'}
             'H' {$Screen = 'History'}
             'S' {$Screen = 'Stats'}
-            'E' {$ExitLoop = $true; Write-Log "Forced end of interval by E key"}
+            'E' {$ExitLoop = $true; Log "Forced end of interval by E key"}
             'W' {$Screen = 'Wallets'}
             'U' {if ($Screen -eq "Wallets") {$WalletsUpdate = $null}}
-            'T' {if ($Screen -eq "Profits") {if ($ProfitsScreenLimit -eq $InitialProfitsScreenLimit) {$ProfitsScreenLimit = 1000} else {$ProfitsScreenLimit = $InitialProfitsScreenLimit}}}
+            'T' {if ($Screen -eq "Profits") {$ProfitsScreenLimit = $(if ($ProfitsScreenLimit -eq $InitialProfitsScreenLimit) {1000} else {$InitialProfitsScreenLimit})}}
             'B' {if ($Screen -eq "Profits") {$ShowBestMinersOnly = -not $ShowBestMinersOnly}}
             'X' {try {Set-WindowSize 180 50} catch {}}
             'Q' {$Quit = $true; $ExitLoop = $true}
         }
 
-        if ($KeyPressed) {Clear-Host; $RepaintScreen = $true}
+        if ($KeyPressed) {
+            Clear-Host
+            $RepaintScreen = $true
+        }
 
-        if (((Get-Date) -ge ($LoopStartTime.AddSeconds($Interval.Duration))) ) {
+        if ((Get-Date) -ge $LoopStartTime.AddSeconds($Interval.Duration)) {
             #If time of interval has over, Exit of main loop
             #If last interval was benchmark and no speed detected mark as failed
             $ActiveMiners.SubMiners | Where-Object Best | ForEach-Object {
                 if ($_.NeedBenchmark -and $_.SpeedReads.Count -eq 0) {
                     $_.Status = 'PendingCancellation'
                     $_.Stats.FailedTimes++
-                    Write-Log "No speed detected while benchmark $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithm) (id $($ActiveMiners[$_.IdF].Id))" -Severity Warn
+                    Log "No speed detected while benchmark $($ActiveMiners[$_.IdF].Name)/$($ActiveMiners[$_.IdF].Algorithm) (id $($ActiveMiners[$_.IdF].Id))" -Severity Warn
                 }
             }
             $ExitLoop = $true
-            Write-Log "Interval ends by time: $($Interval.Duration)" -Severity Debug
+            Log "Interval ends by time: $($Interval.Duration)" -Severity Debug
         }
 
         if ($ExitLoop) {break} #forced Exit
@@ -1766,7 +1737,7 @@ while ($Quit -eq $false) {
 #-----------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
 
-Write-Log "Exiting Forager"
+Log "Exiting Forager"
 $LogFile.close()
 
 Clear-Files
@@ -1774,5 +1745,5 @@ $ActiveMiners | Where-Object Process -ne $null | ForEach-Object {try {Exit-Proce
 Stop-Autoexec
 try {Invoke-WebRequest ("http://localhost:$($Config.ApiPort)/?command=Exit") -timeoutsec 1 -UseDefaultCredentials} catch {}
 
-Stop-Process -Id $APIprocess.Pid
+Stop-Process -Id $APIprocess.PID
 Stop-Process -Id $PID

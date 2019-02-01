@@ -32,7 +32,7 @@ function Send-ErrorsToLog ($LogFile) {
         if ($error[$i].InnerException.Paramname -ne "scopeId") {
             # errors in debug
             $Msg = "###### ERROR ##### " + [string]($error[$i]) + ' ' + $error[$i].ScriptStackTrace
-            Write-Log $msg -Severity Error -NoEcho
+            Log $msg -Severity Error -NoEcho
         }
     }
     $error.clear()
@@ -530,7 +530,6 @@ Function Write-Log {
     }
 }
 Set-Alias Log Write-Log
-
 
 Function Read-KeyboardTimed {
     param(
@@ -1048,7 +1047,7 @@ function Expand-WebRequest {
     try {
         if (Test-Path -LiteralPath $FilePath) {
             if ($SHA256 -and (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash -ne $SHA256) {
-                Write-Log "Existing file hash doesn't match. Will re-download." -Severity Warn
+                Log "Existing file hash doesn't match. Will re-download." -Severity Warn
                 Remove-Item $FilePath
             }
         }
@@ -1057,7 +1056,7 @@ function Expand-WebRequest {
         }
         if (Test-Path -LiteralPath $FilePath) {
             if ($SHA256 -and (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash -ne $SHA256) {
-                Write-Log "File hash doesn't match. Removing file." -Severity Warn
+                Log "File hash doesn't match. Removing file." -Severity Warn
             } elseif (@('.msi', '.exe') -contains (Get-Item $FilePath).Extension) {
                 Start-Process $FilePath "-qb" -Wait
             } else {
@@ -1132,7 +1131,7 @@ function Get-Pools {
                     @($PoolConfig.($Pool.PoolName).IncludeCoins -split ',') -notcontains $Pool.Info
                 )
             ) {
-                Write-Log "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Include filter" -Severity Debug
+                Log "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Include filter" -Severity Debug
                 continue
             }
 
@@ -1141,7 +1140,7 @@ function Get-Pools {
                 @($PoolConfig.($Pool.PoolName).ExcludeAlgos -split ',') -contains $Pool.Algorithm -or
                 @($PoolConfig.($Pool.PoolName).ExcludeCoins -split ',') -contains $Pool.Info
             ) {
-                Write-Log "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Exclude filter" -Severity Debug
+                Log "Excluding $($Pool.Algorithm)/$($Pool.Info) on $($Pool.PoolName) due to Exclude filter" -Severity Debug
                 continue
             }
 
@@ -1157,7 +1156,7 @@ function Get-Pools {
                     elseif ($Pool.Location -eq 'US' -and $Location -eq 'EU') {$Pool.LocationPriority = 2}
 
                     ## factor actual24h if price differs by factor of 10
-                    if ($Pool.Actual24h -gt 0) {
+                    if ($Pool.Actual24h) {
                         $factor = 0.2
                         if ($Pool.Price -gt ($Pool.Actual24h * 10)) {$Pool.Price = $Pool.Price * $factor + $Pool.Actual24h * (1 - $factor)}
                         if ($Pool.Price24h -gt ($Pool.Actual24h * 10)) {$Pool.Price24h = $Pool.Price24h * $factor + $Pool.Actual24h * (1 - $factor)}
@@ -1165,11 +1164,11 @@ function Get-Pools {
                     ## Apply pool fees and pool factors
                     if ($Pool.Price) {
                         $Pool.Price *= 1 - [double]$Pool.Fee
-                        $Pool.Price *= $(if ($PoolConfig.($Pool.PoolName).PoolProfitFactor) {[double]$PoolConfig.($Pool.PoolName).PoolProfitFactor} else {1})
+                        if ($PoolConfig.($Pool.PoolName).PoolProfitFactor) { $Pool.Price *= [double]$PoolConfig.($Pool.PoolName).PoolProfitFactor }
                     }
                     if ($Pool.Price24h) {
                         $Pool.Price24h *= 1 - [double]$Pool.Fee
-                        $Pool.Price24h *= $(if ($PoolConfig.($Pool.PoolName).PoolProfitFactor) {[double]$PoolConfig.($Pool.PoolName).PoolProfitFactor} else {1})
+                        if ($PoolConfig.($Pool.PoolName).PoolProfitFactor) { $Pool.Price24h *= [double]$PoolConfig.($Pool.PoolName).PoolProfitFactor }
                     }
                     $AllPools2 += $Pool
                 }
@@ -1184,17 +1183,29 @@ function Get-Pools {
     $Return
 }
 
-# function Get-Config {
+function Get-Configs {
+    $global:Config = Get-Content .\Config\Config.json | ConvertFrom-Json
+    $global:PoolConfig = Get-Content .\Config\Pools.json | ConvertFrom-Json
+    $global:MinerConfig = Get-Content .\Config\Miners.json | ConvertFrom-Json
+    $global:CostsConfig = Get-Content .\Config\Powercost.json | ConvertFrom-Json
+    $global:Release = Get-Content .\Data\Release.json | ConvertFrom-Json
+}
 
-#     $Result = @{}
-#     switch -regex -file config.ini {
-#         "^\s*(\w+)\s*=\s*(.*)" {
-#             $name, $value = $matches[1..2]
-#             $Result[$name] = $value.Trim()
-#         }
-#     }
-#     $Result # Return Value
-# }
+function Get-Updates {
+    try {
+        $Request = Invoke-APIRequest -Url "https://api.github.com/repos/yuzi-co/$($Release.Application)/releases/latest" -Age 60
+        $RemoteVersion = ($Request.tag_name -replace '[^\d.]')
+        $Uri = $Request.assets | Where-Object Name -eq "$($Release.Application)-v$RemoteVersion.7z" | Select-Object -ExpandProperty browser_download_url
+
+        if ([version]$RemoteVersion -gt [version]$Release.Version) {
+            Log "$($Release.Application) v$($Release.Version) is out of date. There is an updated version available at $Uri" -Severity Warn
+        } elseif ([version]$RemoteVersion -lt [version]$Release.Version) {
+            Log "$($Release.Application) v$($Release.Version) is pre-release version. Use at your own risk" -Severity Warn
+        }
+    } catch {
+        Log "Failed to get $($Release.Application) updates." -Severity Warn
+    }
+}
 
 # Function Get-ConfigVariable {
 #     param(
@@ -1342,7 +1353,7 @@ function Get-HashRates {
         $Content = (Get-Content -path "$Pattern.csv")
         try {$Content = $Content | ConvertFrom-Csv} catch {
             #if error from convert from json delete file
-            Write-Log "Corrupted file $Pattern.csv, deleting" -Severity Warn
+            Log "Corrupted file $Pattern.csv, deleting" -Severity Warn
             Remove-Item -path "$Pattern.csv"
         }
     }
@@ -1397,7 +1408,7 @@ function Get-Stats {
         $Content = (Get-Content -path "$Pattern.json")
         try {$Content = $Content | ConvertFrom-Json} catch {
             #if error from convert from json delete file
-            Write-Log "Corrupted file $Pattern.json, deleting" -Severity Warn
+            Log "Corrupted file $Pattern.json, deleting" -Severity Warn
             Remove-Item -path "$Pattern.json"
         }
     }
@@ -1466,17 +1477,17 @@ function Start-Downloader {
                 $null = New-Item (Split-Path $Path) -ItemType "Directory"
                 (New-Object System.Net.WebClient).DownloadFile($URI, $Path)
                 if ($SHA256 -and (Get-FileHash -Path $Path -Algorithm SHA256).Hash -ne $SHA256) {
-                    Write-Log "File hash doesn't match. Removing file." -Severity Warn
+                    Log "File hash doesn't match. Removing file." -Severity Warn
                     Remove-Item $Path
                 }
             } else {
                 # downloading an archive or installer
-                Write-Log "Downloading $URI" -Severity Info
+                Log "Downloading $URI" -Severity Info
                 Expand-WebRequest -URI $URI -Path $ExtractionPath -SHA256 $SHA256 -ErrorAction Stop
             }
         } catch {
             $Message = "Cannot download $URI"
-            Write-Log $Message -Severity Warn
+            Log $Message -Severity Warn
         }
     }
 }
@@ -1578,17 +1589,17 @@ function Test-DeviceGroupsConfig ($Types) {
         $DetectedDevices = @()
         $DetectedDevices += $Devices | Where-Object Group -eq $_.GroupName
         if ($DetectedDevices.count -eq 0) {
-            Write-Log "No Devices for group " + $_.GroupName + " was detected, activity based watchdog will be disabled for that group, this can happens if AMD beta blockchain drivers are installed or incorrect gpugroups config" -Severity Warn
+            Log "No Devices for group " + $_.GroupName + " was detected, activity based watchdog will be disabled for that group, this can happens if AMD beta blockchain drivers are installed or incorrect gpugroups config" -Severity Warn
             Start-Sleep -Seconds 5
         } elseif ($DetectedDevices.count -ne $_.DevicesCount) {
-            Write-Log "Mismatching Devices for group " + $_.GroupName + " was detected, check gpugroups config and gpulist.bat" -Severity Warn
+            Log "Mismatching Devices for group " + $_.GroupName + " was detected, check gpugroups config and gpulist.bat" -Severity Warn
             Start-Sleep -Seconds 5
         }
     }
     $TotalMem = (($Types | Where-Object Type -ne 'CPU').OCLDevices.GlobalMemSize | Measure-Object -Sum).Sum / 1GB
     $TotalSwap = (Get-CimInstance Win32_PageFile | Select-Object -ExpandProperty FileSize | Measure-Object -Sum).Sum / 1GB
     if ($TotalMem -gt $TotalSwap) {
-        Write-Log "Make sure you have at least $TotalMem GB swap configured" -Severity Warn
+        Log "Make sure you have at least $TotalMem GB swap configured" -Severity Warn
         Start-Sleep -Seconds 5
     }
 }
@@ -1610,7 +1621,7 @@ function Start-Autoexec {
                     $Job | Add-Member FilePath "$($Matches[1])" -Force
                     $Job | Add-Member Arguments "$($Matches[2].Trim())" -Force
                     $Job | Add-Member HasOwnMinerWindow $true -Force
-                    Write-Log "Autoexec command started: $($Matches[1]) $($Matches[2].Trim())"
+                    Log "Autoexec command started: $($Matches[1]) $($Matches[2].Trim())"
                     $Script:AutoexecCommands.Add($Job) >$null
                 }
             } catch {}
