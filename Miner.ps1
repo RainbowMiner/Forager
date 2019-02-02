@@ -9,8 +9,8 @@ param(
 
 Import-Module .\Include.psm1
 
-$global:Config = Get-Config -Type "Config"
-$global:Wallets = Get-Config -Type "Wallets"
+$global:Config = Get-Configs -Type "Config"
+$global:Wallets = Get-Configs -Type "Wallets"
 
 #check parameters
 
