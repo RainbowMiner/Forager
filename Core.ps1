@@ -1327,6 +1327,7 @@ while ($Quit -eq $false) {
         $TimeToNextIntervalSeconds = [int]$TimeToNextInterval.TotalSeconds
         if ($TimeToNextIntervalSeconds -lt 0) {$TimeToNextIntervalSeconds = 0}
 
+        if ($RepaintScreen) {Clear-Host}
         Set-ConsolePosition ($Host.UI.RawUI.WindowSize.Width - 31) 2
         " | Next Interval: $TimeToNextIntervalSeconds secs..." | Out-Host
         Set-ConsolePosition 0 0
@@ -1693,21 +1694,20 @@ while ($Quit -eq $false) {
         $KeyPressed = Read-KeyboardTimed -SecondsToWait 3 -ValidKeys @('P', 'C', 'H', 'E', 'W', 'U', 'T', 'B', 'S', 'X', 'Q')
 
         switch ($KeyPressed) {
-            'P' {$Screen = 'Profits'}
-            'C' {$Screen = 'Current'}
-            'H' {$Screen = 'History'}
-            'S' {$Screen = 'Stats'}
+            'P' {$Screen = 'Profits'; Log "Switch to Profits screen"}
+            'C' {$Screen = 'Current'; Log "Switch to Current screen"}
+            'H' {$Screen = 'History'; Log "Switch to History screen"}
+            'S' {$Screen = 'Stats'; Log "Switch to Stats screen"}
             'E' {$ExitLoop = $true; Log "Forced end of interval by E key"}
-            'W' {$Screen = 'Wallets'}
-            'U' {if ($Screen -eq "Wallets") {$WalletsUpdate = $null}}
-            'T' {if ($Screen -eq "Profits") {$ProfitsScreenLimit = $(if ($ProfitsScreenLimit -eq $InitialProfitsScreenLimit) {1000} else {$InitialProfitsScreenLimit})}}
-            'B' {if ($Screen -eq "Profits") {$ShowBestMinersOnly = -not $ShowBestMinersOnly}}
-            'X' {try {Set-WindowSize 180 50} catch {}}
+            'W' {$Screen = 'Wallets'; Log "Switch to Wallet screen"}
+            'U' {if ($Screen -eq "Wallets") {$WalletsUpdate = $null}; Log "Update wallets"}
+            'T' {if ($Screen -eq "Profits") {$ProfitsScreenLimit = $(if ($ProfitsScreenLimit -eq $InitialProfitsScreenLimit) {1000} else {$InitialProfitsScreenLimit}); Log "Toggle Profits Top"}}
+            'B' {if ($Screen -eq "Profits") {$ShowBestMinersOnly = -not $ShowBestMinersOnly}; Log "Toggle Profits Best"}
+            'X' {try {Set-WindowSize 180 50} catch {}; Log "Reset screen size"}
             'Q' {$Quit = $true; $ExitLoop = $true; Log "Exit by Q key"}
         }
 
         if ($KeyPressed) {
-            Clear-Host
             $RepaintScreen = $true
         }
 
