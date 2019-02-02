@@ -1,18 +1,18 @@
 param(
     [Parameter(Mandatory = $false)]
-    [Array]$Algorithm = $null,
+    [Array]$Algorithm,
 
     [Parameter(Mandatory = $false)]
-    [Array]$PoolsName = $null,
+    [Array]$PoolsName,
 
     [Parameter(Mandatory = $false)]
-    [array]$CoinsName = $null,
+    [array]$CoinsName,
 
     [Parameter(Mandatory = $false)]
-    [String]$MiningMode = $null,
+    [String]$MiningMode,
 
     [Parameter(Mandatory = $false)]
-    [array]$GroupNames = $null
+    [array]$GroupNames
 )
 
 $Error.Clear()
@@ -1122,7 +1122,7 @@ while ($Quit -eq $false) {
     elseif ($Interval.Benchmark) { $Interval.Duration = $Config.BenchmarkTime }
     else {
         $Interval.Duration = $ActiveMiners.SubMiners | Where-Object Status -eq 'Running' | Select-Object -ExpandProperty IdF | ForEach-Object {
-            $PoolInterval = $Config.("INTERVAL_" + $ActiveMiners[$_].PoolRewardType)
+            $PoolInterval = $Config.("Interval_" + $ActiveMiners[$_].PoolRewardType)
             Log "Interval for pool $($ActiveMiners[$_].PoolName) is $PoolInterval" -Severity Debug
             $PoolInterval  # Return value
         } | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
@@ -1156,7 +1156,7 @@ while ($Quit -eq $false) {
     #loop to update info and check if miner is running, Exit loop is forced inside
     while ($true) {
 
-        $global:ExitLoop = $false
+        $ExitLoop = $false
 
         if ($Config.HardwareMonitoring) {
             $Devices = Get-DevicesInformation $DeviceGroups
@@ -1510,7 +1510,7 @@ while ($Quit -eq $false) {
                 @{Label = "PwLim"; Expression = {if ($_.SubMiner.PowerLimit -ne 0) {$_.SubMiner.PowerLimit}}; align = 'right'},
                 @{Label = "Watt"; Expression = {if ($_.SubMiner.PowerAvg -gt 0) {$_.SubMiner.PowerAvg.tostring("n0")} else {$null}}; Align = 'right'},
                 @{Label = "$($Config.LocalCurrency)/W"; Expression = {if ($_.SubMiner.PowerAvg -gt 0) {($_.SubMiner.Profits / $_.SubMiner.PowerAvg).tostring("n4")} else {$null} }; Align = 'right'},
-                @{Label = "mBTC/Day"; Expression = {if ($_.SubMiner.Revenue) {((($_.SubMiner.Revenue + $_.SubMiner.RevenueDual) * 1000).tostring("n5"))} else {$null}} ; Align = 'right'},
+                @{Label = "mBTC/Day"; Expression = {if ($_.SubMiner.Revenue) {((($_.SubMiner.Revenue + $_.SubMiner.RevenueDual) * 1000).tostring("n3"))} else {$null}} ; Align = 'right'},
                 @{Label = $($Config.LocalCurrency) + "/Day"; Expression = {if ($_.SubMiner.Revenue) {((($_.SubMiner.Revenue + $_.SubMiner.RevenueDual) * [double]$localBTCvalue).tostring("n2"))} else {$null}} ; Align = 'right'},
                 @{Label = "Profit/Day"; Expression = {if ($_.SubMiner.Profits) {($_.SubMiner.Profits).tostring("n2") + " $($Config.LocalCurrency)"} else {$null}}; Align = 'right'},
                 @{Label = "PoolFee"; Expression = {if ($_.PoolFee -gt 0) {"{0:p2}" -f $_.PoolFee}}; Align = 'right'},
@@ -1750,5 +1750,5 @@ $ActiveMiners | Where-Object Process -ne $null | ForEach-Object {try {Exit-Proce
 Stop-Autoexec
 try {Invoke-WebRequest ("http://localhost:$($Config.ApiPort)/?command=Exit") -timeoutsec 1 -UseDefaultCredentials} catch {}
 
-Stop-Process -Id $APIprocess.PID
+if ($APIprocess) {Stop-Process -Id $APIprocess.Id}
 Stop-Process -Id $PID
