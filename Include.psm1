@@ -713,25 +713,25 @@ function Get-LiveHashRate {
                 $Request = Invoke-TCPRequest -Port $Miner.ApiPort -Request $Message
 
                 if ($Request) {
-                    $Data = $Request.Substring($Request.IndexOf("{"), $Request.LastIndexOf("}") - $Request.IndexOf("{") + 1) -replace " ", "_" | ConvertFrom-Json
+                    $Data = $Request.Substring($Request.IndexOf("{"), $Request.LastIndexOf("}") - $Request.IndexOf("{") + 1) | ConvertFrom-Json
 
                     $HashRate = @(
-                        [double]$Data.SUMMARY.HS_5s
-                        [double]$Data.SUMMARY.KHS_5s * 1e3
-                        [double]$Data.SUMMARY.MHS_5s * 1e6
-                        [double]$Data.SUMMARY.GHS_5s * 1e9
-                        [double]$Data.SUMMARY.THS_5s * 1e12
-                        [double]$Data.SUMMARY.PHS_5s * 1e15
+                        [double]$Data.SUMMARY."HS 5s"
+                        [double]$Data.SUMMARY."MHS 5s" * 1e6
+                        [double]$Data.SUMMARY."KHS 5s" * 1e3
+                        [double]$Data.SUMMARY."GHS 5s" * 1e9
+                        [double]$Data.SUMMARY."THS 5s" * 1e12
+                        [double]$Data.SUMMARY."PHS 5s" * 1e15
                     ) | Where-Object {$_ -gt 0} | Select-Object -First 1
 
                     if (-not $HashRate) {
                         $HashRate = @(
-                            [double]$Data.SUMMARY.HS_av
-                            [double]$Data.SUMMARY.KHS_av * 1e3
-                            [double]$Data.SUMMARY.MHS_av * 1e6
-                            [double]$Data.SUMMARY.GHS_av * 1e9
-                            [double]$Data.SUMMARY.THS_av * 1e12
-                            [double]$Data.SUMMARY.PHS_av * 1e15
+                            [double]$Data.SUMMARY."HS av"
+                            [double]$Data.SUMMARY."MHS av" * 1e6
+                            [double]$Data.SUMMARY."KHS av" * 1e3
+                            [double]$Data.SUMMARY."GHS av" * 1e9
+                            [double]$Data.SUMMARY."THS av" * 1e12
+                            [double]$Data.SUMMARY."PHS av" * 1e15
                         ) | Where-Object {$_ -gt 0} | Select-Object -First 1
                     }
                 }
@@ -775,7 +775,6 @@ function Get-LiveHashRate {
                             Ubqhash* { $Multiplier *= 1000 }
                         }
                     }
-
                     $HashRate = @(
                         [double]$Data.result[2].Split(";")[0] * $Multiplier
                         [double]$Data.result[4].Split(";")[0] * $Multiplier
