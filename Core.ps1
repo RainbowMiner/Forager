@@ -1496,7 +1496,7 @@ while ($Quit -eq $false) {
                 $Candidates | Where-Object NeedBenchmark -eq $false | Group-Object {$_.GroupName + $_.Algorithm + $_.AlgorithmDual} | ForEach-Object {
                     $_.Group | Sort-Object Profits, Revenue -Descending | Select-Object -First $(if ($ShowBestMinersOnly) {1} else {1000})
                 }
-            ) | Group-Object GroupName | ForEach-Object {$_.Group | Sort-Object Profits, Revenue -Descending | Select-Object -First $ProfitsScreenLimit}
+            ) | Group-Object GroupName | ForEach-Object {$_.Group | Sort-Object NeedBenchmark, Profits, Revenue -Descending | Select-Object -First $ProfitsScreenLimit}
 
             $ProfitMiners | Sort-Object `
             @{expression = {$_.GroupName -eq 'CPU'}; Ascending = $true},
