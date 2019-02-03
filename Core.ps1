@@ -86,6 +86,9 @@ $Interval = @{
     Benchmark = $null
 }
 
+$Global:SystemInfo = Get-SystemInfo
+Log ($SystemInfo | ConvertTo-Json) -Severity Debug
+
 $Global:Config = Get-Configs -Type 'Config'
 $Screen = $Config.StartScreen
 

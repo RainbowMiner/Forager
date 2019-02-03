@@ -506,6 +506,21 @@ function Get-MiningTypes () {
     $Types #return
 }
 
+function Get-SystemInfo () {
+
+    $OperatingSystem = Get-CimInstance Win32_OperatingSystem
+    $Features = $($feat = @{}; switch -regex ((& .\Includes\CHKCPU32.exe /x) -split "</\w+>") {"^\s*<_?(\w+)>(\d+).*" {$feat.($matches[1]) = [int]$matches[2]}}; $feat)
+
+    [PSCustomObject]@{
+        OSName       = $OperatingSystem.Caption
+        OSVersion    = [version]$OperatingSystem.Version
+        ComputerName = $env:COMPUTERNAME
+        CPUCores     = $Features.cores
+        CPUThreads   = $Features.threads
+        CPUFeatures  = $Features
+    }
+}
+
 Function Write-Log {
     param(
         [Parameter()]
