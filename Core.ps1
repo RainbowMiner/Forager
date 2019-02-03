@@ -191,7 +191,6 @@ while ($Quit -eq $false) {
     $Global:Config = Get-Configs -Type 'Config'
     $Global:PoolConfig = Get-Configs -Type 'Pools'
     $Global:MinerConfig = Get-Configs -Type 'Miners'
-    $Global:CostsConfig = Get-Configs -Type 'Powercost'
 
     Clear-Host
     $RepaintScreen = $true
@@ -266,6 +265,7 @@ while ($Quit -eq $false) {
     Send-ErrorsToLog $LogFile
 
     #get actual hour electricity cost
+    $CostsConfig = Get-Configs -Type 'Powercost'
     $CostsConfig | ForEach-Object {
         if ((
                 $_.HourStart -lt $_.HourEnd -and
@@ -277,9 +277,7 @@ while ($Quit -eq $false) {
                 )
             )
         ) {
-            $PowerCost = [double]$_.CostKwh
-        } else {
-            $PowerCost = 0
+            $PowerCost = [decimal]$_.CostKwh
         }
     }
 
@@ -1510,13 +1508,13 @@ while ($Quit -eq $false) {
                 @{Label = "Algorithm"; Expression = {$_.Algorithms + $(if ($_.AlgoLabel) {"|$($_.AlgoLabel)"})}},
                 @{Label = "Coin"; Expression = {$_.Symbol + $(if ($_.AlgorithmDual) {"_$($_.SymbolDual)"})}},
                 @{Label = "Miner"; Expression = {$_.Name}},
-                @{Label = "StatsSpeed"; Expression = {if ($_.SubMiner.NeedBenchmark) {"Bench"} else {"$(ConvertTo-Hash $_.SubMiner.HashRate)" + $(if ($_.AlgorithmDual) {"/$(ConvertTo-Hash $_.SubMiner.HashRateDual)"})}}; Align = 'right'},
+                @{Label = "StatsSpeed"; Expression = {if ($_.NeedBenchmark) {"Bench"} else {"$(ConvertTo-Hash $_.SubMiner.HashRate)" + $(if ($_.AlgorithmDual) {"/$(ConvertTo-Hash $_.SubMiner.HashRateDual)"})}}; Align = 'right'},
                 @{Label = "PwLim"; Expression = {if ($_.SubMiner.PowerLimit -ne 0) {$_.SubMiner.PowerLimit}}; align = 'right'},
                 @{Label = "Watt"; Expression = {if ($_.SubMiner.PowerAvg -gt 0) {$_.SubMiner.PowerAvg.tostring("n0")} else {$null}}; Align = 'right'},
                 @{Label = "$($Config.LocalCurrency)/W"; Expression = {if ($_.SubMiner.PowerAvg -gt 0) {($_.SubMiner.Profits / $_.SubMiner.PowerAvg).tostring("n4")} else {$null} }; Align = 'right'},
-                @{Label = "mBTC/Day"; Expression = {if ($_.SubMiner.Revenue) {((($_.SubMiner.Revenue + $_.SubMiner.RevenueDual) * 1000).tostring("n3"))} else {$null}} ; Align = 'right'},
-                @{Label = $($Config.LocalCurrency) + "/Day"; Expression = {if ($_.SubMiner.Revenue) {((($_.SubMiner.Revenue + $_.SubMiner.RevenueDual) * [double]$localBTCvalue).tostring("n2"))} else {$null}} ; Align = 'right'},
-                @{Label = "Profit/Day"; Expression = {if ($_.SubMiner.Profits) {($_.SubMiner.Profits).tostring("n2") + " $($Config.LocalCurrency)"} else {$null}}; Align = 'right'},
+                @{Label = "mBTC/Day"; Expression = {if ($_.Revenue) {($_.Revenue * 1000).tostring("n3")} else {$null}} ; Align = 'right'},
+                @{Label = $($Config.LocalCurrency) + "/Day"; Expression = {if ($_.Revenue) {($_.Revenue * [double]$localBTCvalue).tostring("n2")} else {$null}} ; Align = 'right'},
+                @{Label = "Profit/Day"; Expression = {if ($_.Profits) {($_.Profits).tostring("n2") + " $($Config.LocalCurrency)"} else {$null}}; Align = 'right'},
                 @{Label = "PoolFee"; Expression = {if ($_.PoolFee -gt 0) {"{0:p2}" -f $_.PoolFee}}; Align = 'right'},
                 @{Label = "MinerFee"; Expression = {if ($_.MinerFee -gt 0) {"{0:p2}" -f $_.MinerFee}}; Align = 'right'},
                 @{Label = "Pool"; Expression = {$_.PoolName + '-' + $_.Location + $(if ($_.AlgorithmDual) {"/" + $_.PoolNameDual + "-" + $_.LocationDual})}}
