@@ -1,0 +1,13 @@
+{
+    "AION": "AION0PoW",
+    "ANON": "AnonyPoW",
+    "BTCZ": "BitcoinZ",
+    "BTG": "BgoldPoW",
+    "GENX": "GENX_PoW",
+    "LTZ": "ZcashPoW",
+    "MNX": "ZcashPoW",
+    "SAFE": "Safecoin",
+    "XSG": "sngemPoW",
+    "ZEL": "ZelProof",
+    "ZER": "ZERO_PoW"
+}
