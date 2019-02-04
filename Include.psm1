@@ -469,9 +469,6 @@ function Get-MiningTypes () {
             $TypeID++
 
             $_ | Add-Member DevicesArray    @([int[]]($_.Devices -split ','))                               # @(0,1,2,10,11,12)
-            $_ | Add-Member DevicesClayMode (($_.DevicesArray | ForEach-Object {'{0:X}' -f $_}) -join '')   # 012ABC
-            $_ | Add-Member DevicesETHMode  ($_.DevicesArray -join ' ')                                     # 0 1 2 10 11 12
-            $_ | Add-Member DevicesNsgMode  (($_.DevicesArray | ForEach-Object { "-d " + $_}) -join ' ')    # -d 0 -d 1 -d 2 -d 10 -d 11 -d 12
             $_ | Add-Member DevicesCount    ($_.DevicesArray.count)                                         # 6
 
             switch ($_.Type) {
@@ -480,11 +477,9 @@ function Get-MiningTypes () {
                 INTEL { $Pattern = 'Intel(R) Corporation' }
                 CPU { $Pattern = '' }
             }
-            $_ | Add-Member OCLDevices @($OCLDevices | Where-Object {$_.Vendor -eq $Pattern -and $_.Type -eq 'Gpu'})[$_.DevicesArray]
-            if ($null -eq $_.PlatformId) {$_ | Add-Member PlatformId ($_.OCLDevices.PlatformId | Select-Object -First 1)}
-            if ($null -eq $_.MemoryGB) {$_ | Add-Member MemoryGB ([int](($_.OCLDevices | Measure-Object -Property GlobalMemSize -Minimum | Select-Object -ExpandProperty Minimum) / 1GB ))}
-            if ($null -eq $_.DevicesMask) {$_ | Add-Member DevicesMask ('{0:X}' -f [int]($_.DevicesArray | ForEach-Object { [System.Math]::Pow(2, $_) } | Measure-Object -Sum).Sum)}
-
+            $OCLDevice = @($OCLDevices | Where-Object {$_.Vendor -eq $Pattern -and $_.Type -eq 'Gpu'})[$_.DevicesArray]
+            if ($null -eq $_.PlatformId) {$_ | Add-Member PlatformId ($OCLDevice.PlatformId | Select-Object -First 1)}
+            if ($null -eq $_.MemoryGB) {$_ | Add-Member MemoryGB ([int](($OCLDevice | Measure-Object -Property GlobalMemSize -Minimum | Select-Object -ExpandProperty Minimum) / 1GB ))}
 
             if ($_.PowerLimits.Count -eq 0) {
                 $_ | Add-Member PowerLimits @(0)
@@ -505,6 +500,33 @@ function Get-MiningTypes () {
     }
     $Types #return
 }
+
+function Format-DeviceList {
+    param(
+        [Parameter(Mandatory = $false)]
+        [Array]$Devices,
+
+        [Parameter(Mandatory = $false)]
+        [string]$List,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Clay', 'Nsg', 'Eth', 'Count', 'Mask')]
+        [string]$Type = 'Info'
+    )
+
+    if ($List -and -not $Devices) {
+        $Devices = $List -split ','
+    }
+
+    switch ($Type) {
+        Clay { ($Devices | ForEach-Object {'{0:X}' -f $_}) -join '' }    # 012ABC
+        Nsg { ($Devices | ForEach-Object { "-d " + $_}) -join ' ' }      # -d 0 -d 1 -d 2 -d 10 -d 11 -d 12
+        Eth { $Devices -join ' ' }                                       # 0 1 2 10 11 12
+        Count { $Devices.count }                                         # 6
+        Mask { '{0:X}' -f [int]($Devices | ForEach-Object { [System.Math]::Pow(2, $_) } | Measure-Object -Sum).Sum }
+    }
+}
+
 
 function Get-SystemInfo () {
 

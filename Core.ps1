@@ -333,7 +333,7 @@ while ($Quit -eq $false) {
         ForEach-Object {
         $NeedPool = $true
         ## Order by price (profitability)
-        $_.Group | Select-Object *, @{Name = "Estimate"; Expression = {if ($MiningMode -eq 'Automatic24h' -and $_.Price24h) {$_.Price24h} else {$_.Price}}} |
+        $_.Group | Select-Object *, @{Name = "Estimate"; Expression = {if ($MiningMode -eq 'Automatic24h' -and $_.Price24h) {[decimal]$_.Price24h} else {[decimal]$_.Price}}} |
             Sort-Object -Property `
         @{Expression = "Estimate"; Descending = $true},
         @{Expression = "LocationPriority"; Ascending = $true} | ForEach-Object {
@@ -456,9 +456,9 @@ while ($Quit -eq $false) {
 
                             '#GPUPlatform#'         = $DeviceGroup.PlatformId
                             '#Devices#'             = $DeviceGroup.Devices
-                            '#DevicesClayMode#'     = $DeviceGroup.DevicesClayMode
-                            '#DevicesETHMode#'      = $DeviceGroup.DevicesETHMode
-                            '#DevicesNsgMode#'      = $DeviceGroup.DevicesNsgMode
+                            '#DevicesClayMode#'     = Format-DeviceList -List $DeviceGroup.Devices -Type Clay
+                            '#DevicesETHMode#'      = Format-DeviceList -List $DeviceGroup.Devices -Type Eth
+                            '#DevicesNsgMode#'      = Format-DeviceList -List $DeviceGroup.Devices -Type Nsg
                             '#GroupName#'           = $DeviceGroup.GroupName
                         }
 
@@ -553,9 +553,9 @@ while ($Quit -eq $false) {
                                 $p95Index = [math]::Ceiling($Hrs.Count * 0.95)
                                 $Hrs = $Hrs[$p5Index..$p95Index]
 
-                                $PowerValue = [double]($Hrs | Measure-Object -property Power -average).average
-                                $HashRateValue = [double]($Hrs | Measure-Object -property Speed -average).average
-                                $HashRateValueDual = [double]($Hrs | Measure-Object -property SpeedDual -average).average
+                                $PowerValue = [decimal]($Hrs | Measure-Object -property Power -average).average
+                                $HashRateValue = [decimal]($Hrs | Measure-Object -property Speed -average).average
+                                $HashRateValueDual = [decimal]($Hrs | Measure-Object -property SpeedDual -average).average
                             } else {
                                 $PowerValue = 0
                                 $HashRateValue = 0
@@ -563,8 +563,8 @@ while ($Quit -eq $false) {
                             }
 
                             #calculates revenue
-                            $SubMinerRevenue = [double]($HashRateValue * $Pool.Estimate)
-                            $SubMinerRevenueDual = [double]($HashRateValueDual * $PoolDual.Estimate)
+                            $SubMinerRevenue = [decimal]($HashRateValue * $Pool.Estimate)
+                            $SubMinerRevenueDual = [decimal]($HashRateValueDual * $PoolDual.Estimate)
 
                             #apply fee to revenues
                             $MinerFee = [decimal]$ExecutionContext.InvokeCommand.ExpandString($Miner.Fee)
@@ -643,12 +643,12 @@ while ($Quit -eq $false) {
                             MinerFee            = $MinerFee
                             Name                = $MinerFile.BaseName
                             Path                = $(".\Bin\" + $MinerFile.BaseName + "\" + $ExecutionContext.InvokeCommand.ExpandString($Miner.Path))
-                            PoolFee             = [double]$Pool.Fee
-                            PoolFeeDual         = [double]$PoolDual.Fee
+                            PoolFee             = [decimal]$Pool.Fee
+                            PoolFeeDual         = [decimal]$PoolDual.Fee
                             PoolName            = $Pool.PoolName
                             PoolNameDual        = $PoolDual.PoolName
-                            PoolPrice           = [double]$Pool.Estimate
-                            PoolPriceDual       = [double]$PoolDual.Estimate
+                            PoolPrice           = [decimal]$Pool.Estimate
+                            PoolPriceDual       = [decimal]$PoolDual.Estimate
                             PoolRewardType      = $Pool.RewardType
                             PoolWorkers         = $Pool.PoolWorkers
                             PoolWorkersDual     = $PoolDual.PoolWorkers
@@ -1181,8 +1181,8 @@ while ($Quit -eq $false) {
             $Miner_HashRates = Get-LiveHashRate -Miner $ActiveMiners[$_.IdF]
 
             if ($Miner_HashRates) {
-                $_.SpeedLive = [double]($Miner_HashRates[0])
-                $_.SpeedLiveDual = [double]($Miner_HashRates[1])
+                $_.SpeedLive = [decimal]($Miner_HashRates[0])
+                $_.SpeedLiveDual = [decimal]($Miner_HashRates[1])
                 $_.RevenueLive = $_.SpeedLive * $ActiveMiners[$_.IdF].PoolPrice
                 $_.RevenueLiveDual = $_.SpeedLiveDual * $ActiveMiners[$_.IdF].PoolPriceDual
 
@@ -1513,7 +1513,7 @@ while ($Quit -eq $false) {
                 @{Label = "Watt"; Expression = {if ($_.SubMiner.PowerAvg -gt 0) {$_.SubMiner.PowerAvg.tostring("n0")} else {$null}}; Align = 'right'},
                 @{Label = "$($Config.LocalCurrency)/W"; Expression = {if ($_.SubMiner.PowerAvg -gt 0) {($_.SubMiner.Profits / $_.SubMiner.PowerAvg).tostring("n4")} else {$null} }; Align = 'right'},
                 @{Label = "mBTC/Day"; Expression = {if ($_.Revenue) {($_.Revenue * 1000).tostring("n3")} else {$null}} ; Align = 'right'},
-                @{Label = $($Config.LocalCurrency) + "/Day"; Expression = {if ($_.Revenue) {($_.Revenue * [double]$localBTCvalue).tostring("n2")} else {$null}} ; Align = 'right'},
+                @{Label = $($Config.LocalCurrency) + "/Day"; Expression = {if ($_.Revenue) {($_.Revenue * [decimal]$localBTCvalue).tostring("n2")} else {$null}} ; Align = 'right'},
                 @{Label = "Profit/Day"; Expression = {if ($_.Profits) {($_.Profits).tostring("n2") + " $($Config.LocalCurrency)"} else {$null}}; Align = 'right'},
                 @{Label = "PoolFee"; Expression = {if ($_.PoolFee -gt 0) {"{0:p2}" -f $_.PoolFee}}; Align = 'right'},
                 @{Label = "MinerFee"; Expression = {if ($_.MinerFee -gt 0) {"{0:p2}" -f $_.MinerFee}}; Align = 'right'},
@@ -1692,7 +1692,7 @@ while ($Quit -eq $false) {
 
         #Loop for reading key and wait
 
-        $KeyPressed = Read-KeyboardTimed -SecondsToWait 3 -ValidKeys @('P', 'C', 'H', 'E', 'W', 'U', 'T', 'B', 'S', 'X', 'Q')
+        $KeyPressed = Read-KeyboardTimed -SecondsToWait 3 -ValidKeys @('P', 'C', 'H', 'E', 'W', 'U', 'T', 'B', 'S', 'X', 'Q', 'D')
 
         switch ($KeyPressed) {
             'P' {$Screen = 'Profits'; Log "Switch to Profits screen"}
@@ -1706,6 +1706,11 @@ while ($Quit -eq $false) {
             'B' {if ($Screen -eq "Profits") {$ShowBestMinersOnly = -not $ShowBestMinersOnly}; Log "Toggle Profits Best"}
             'X' {try {Set-WindowSize 180 50} catch {}; Log "Reset screen size"}
             'Q' {$Quit = $true; $ExitLoop = $true; Log "Exit by Q key"}
+            'D' {
+                    if (-not (Test-Path ".\Dump")) { New-Item -Path .\Dump -ItemType directory -Force | Out-Null }
+                    $Pools | ConvertTo-Json -Depth 10 | Set-Content .\Dump\Pools.json
+                    $ActiveMiners | ConvertTo-Json -Depth 10 | Set-Content .\Dump\Miners.json
+                }
         }
 
         if ($KeyPressed) {
